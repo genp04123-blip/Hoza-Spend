@@ -57,6 +57,10 @@ class GuideSection extends StatelessWidget {
               'On Android 10 and later the folder appears the first time you '
                   'receive something, because Android does not let an app '
                   'create an empty folder there.'
+            else if (Platform.isIOS)
+              'Open the Files app and look under On My iPhone. iOS has no '
+                  'shared Downloads folder, so each app keeps its own - and '
+                  'this one is HozaSend.'
             else
               'You can change this in Download location above.',
             'A file is only saved once it has arrived complete and its '

@@ -11,6 +11,7 @@ transfer directly. Nothing is uploaded anywhere, because there is nowhere to
 upload it to.
 
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-1E4ED8)](#)
+[![Apple](https://img.shields.io/badge/macOS%20%7C%20iOS-coming%20soon-8A5A12)](#macos--coming-soon)
 [![Flutter](https://img.shields.io/badge/Flutter-3.44-3B72FF)](https://flutter.dev)
 [![Offline](https://img.shields.io/badge/internet-not%20required-34D399)](#)
 
@@ -60,7 +61,8 @@ sweeping for devices. Same codebase, same design, laid out for each screen.*
 ## Install
 
 Grab the newest build from the [**Releases**](../../releases/latest) page —
-the `.zip` for Windows, the `.apk` for Android. Step-by-step instructions,
+the `.zip` for Windows, the `.apk` for Android. A macOS `.app` and an iOS
+`.ipa` are **coming soon**; both need a Mac to compile. Step-by-step instructions,
 including the firewall prompt and the SmartScreen and Play Protect warnings,
 are in **[INSTALL.md](INSTALL.md)**.
 
@@ -78,6 +80,56 @@ other.
 Install the APK; Android will ask you to allow installs from your browser
 first. HozaSend then asks for notification permission on first launch;
 declining only costs the alerts.
+
+### macOS — coming soon
+
+**The codebase supports macOS.** Not a plan or a maybe: the platform work is
+done and in the repo.
+
+- Sandbox entitlements for the network server, client, file picker and
+  Downloads — in **both** debug and release, which is the trap the stock
+  template leaves you in
+- `NSLocalNetworkUsageDescription`, so the macOS 15 local-network prompt
+  explains itself
+- Reveal in Finder with the file selected, notifications through Notification
+  Centre, `⌘O` in the picker, window sizing and minimum size
+- The intro names *the macOS local-network prompt* rather than the Windows
+  firewall
+- App icons generated at all seven sizes
+
+The networking needed no changes at all — it is pure `dart:io`, and every
+plugin in use already ships macOS support.
+
+### iOS — one blocker to clear first
+
+The platform work is in the repo too: local-network and Bonjour keys, file
+sharing so received files appear in the Files app under **On My iPhone**, the
+device name from Settings, notifications, and app icons.
+
+**But discovery will not work yet, and that is Apple's rule, not a bug.**
+Since iOS 14, UDP broadcast is silently dropped unless the app carries
+`com.apple.developer.networking.multicast` — a *managed* entitlement Apple
+grants case by case on request. HozaSend discovers by broadcasting, so on iOS
+devices will not find each other until either:
+
+- **Apple grants that entitlement** (needs a paid Developer account and their
+  approval), or
+- **discovery gains a Bonjour/mDNS path** — Apple's sanctioned route, needing
+  no special entitlement. The `NSBonjourServices` declaration is already in
+  place for it; what is missing is the second discovery implementation.
+
+Everything else on iOS — pairing, transfer, verification, history — is the
+same code that runs everywhere else and needs nothing new.
+
+**What is missing is a build.** macOS apps can only be compiled on a Mac with
+Xcode, and this has not been run on one yet, so nothing here is claimed as
+tested. A release will follow once it has been. If you have a Mac:
+
+```bash
+flutter run -d macos
+```
+
+Issues and reports from that are very welcome.
 
 ### Build it yourself
 
@@ -197,6 +249,10 @@ Stated plainly, because pretending otherwise wastes your time:
   over, so a multi-GB video costs temporary storage while it sends.
 - **Discovery assumes a /24 subnet** for its directed broadcast. Dart exposes
   no interface netmask. The limited broadcast covers everything else.
+- **The macOS build is untested.** The code is there and analyses clean, but it
+  has never been compiled on a Mac. Treat it as ready to try, not as shipped.
+- **iOS cannot discover yet.** Apple blocks UDP broadcast without a managed
+  entitlement. See [iOS — one blocker to clear first](#ios--one-blocker-to-clear-first).
 
 ---
 

@@ -54,8 +54,12 @@ class SelectionScreen extends StatelessWidget {
         child: CallbackShortcuts(
           bindings: <ShortcutActivator, VoidCallback>{
             // The desktop convention for "open a file", and the one thing a
-            // keyboard user does most on this screen.
+            // keyboard user does most on this screen. Both modifiers are bound
+            // rather than branching on the platform: Cmd is meaningless on
+            // Windows and Ctrl is unused here on a Mac, so neither can collide.
             const SingleActivator(LogicalKeyboardKey.keyO, control: true): () =>
+                unawaited(selection.addFiles()),
+            const SingleActivator(LogicalKeyboardKey.keyO, meta: true): () =>
                 unawaited(selection.addFiles()),
           },
           child: Focus(

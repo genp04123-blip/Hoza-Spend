@@ -7,6 +7,7 @@ import '../../../core/models/transfer.dart';
 import '../../../core/services/reveal_service.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/hoza_card.dart';
+import '../../../shared/widgets/pill_button.dart';
 import '../../../shared/widgets/status_pill.dart';
 import '../../transfer/widgets/received_file_row.dart';
 
@@ -189,16 +190,13 @@ class _Details extends StatelessWidget {
             const SizedBox(height: Insets.sm),
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton.icon(
+              child: PillButton(
+                icon: Icons.folder_open_rounded,
+                label: 'Open folder',
+                // Quieter than the Open on each file above it. Both are ways
+                // in, but one lands on the file and the other only near it.
+                tone: c.textSecondary,
                 onPressed: () => RevealService.openContainingFolder(path),
-                icon: const Icon(Icons.folder_open_rounded, size: 16),
-                label: const Text('Open folder'),
-                style: TextButton.styleFrom(
-                  foregroundColor: c.primary,
-                  padding: const EdgeInsets.symmetric(horizontal: Insets.sm),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
               ),
             ),
           ],

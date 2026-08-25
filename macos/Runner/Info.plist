@@ -24,6 +24,12 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
+	<!-- macOS 15 (Sequoia) asks the user before an app may touch the local
+	     network, and shows this sentence in the prompt. Without the key the
+	     prompt still appears but with no explanation, and a user who declines
+	     leaves discovery permanently silent. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>HozaSend finds nearby devices on your Wi-Fi or hotspot so you can send files directly to them. Nothing is ever sent over the internet.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

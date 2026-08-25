@@ -6,14 +6,26 @@ import '../../../app/theme/app_tokens.dart';
 import '../../../core/models/hoza_device.dart';
 import '../../../shared/widgets/edge_light.dart';
 import '../../../shared/widgets/hoza_card.dart';
+import '../../../shared/widgets/pill_button.dart';
 import '../../../shared/widgets/status_pill.dart';
 
 /// One discovered device in the nearby list.
 class DeviceTile extends StatelessWidget {
-  const DeviceTile({super.key, required this.device, this.onTap});
+  const DeviceTile({
+    super.key,
+    required this.device,
+    this.onTap,
+    this.onDisconnect,
+  });
 
   final HozaDevice device;
   final VoidCallback? onTap;
+
+  /// Hangs up the live session. Given only for the device this one is actually
+  /// connected to - and shown right there on its row, because that is where a
+  /// person looks when they want to end it, not inside a sheet they have to
+  /// reopen first.
+  final VoidCallback? onDisconnect;
 
   IconData get _icon => switch (device.platform) {
         DevicePlatform.android || DevicePlatform.ios =>
@@ -24,7 +36,10 @@ class DeviceTile extends StatelessWidget {
       };
 
   (String, StatusTone) get _status => switch (device.status) {
-        DeviceStatus.available => ('Available', StatusTone.neutral),
+        // Green, not grey. A device that answered a beacon two seconds ago is
+        // good news - it is the whole reason the list exists - and a neutral
+        // dot made the most common row on the screen read as "nothing here".
+        DeviceStatus.available => ('Available', StatusTone.positive),
         DeviceStatus.connecting => ('Connecting', StatusTone.working),
         DeviceStatus.connected => ('Connected', StatusTone.positive),
         DeviceStatus.busy => ('Busy', StatusTone.warning),
@@ -86,6 +101,15 @@ class DeviceTile extends StatelessWidget {
             tone: tone,
             pulse: device.status == DeviceStatus.connecting,
           ),
+          if (onDisconnect case final VoidCallback disconnect) ...<Widget>[
+            const SizedBox(width: Insets.sm),
+            PillButton(
+              icon: Icons.link_off_rounded,
+              tone: c.danger,
+              tooltip: 'Disconnect',
+              onPressed: disconnect,
+            ),
+          ],
         ],
       ),
     );

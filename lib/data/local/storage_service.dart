@@ -35,7 +35,11 @@ class StorageService {
       } catch (_) {
         // Fall through to documents.
       }
-    } else {
+    } else if (!Platform.isIOS) {
+      // iOS is skipped deliberately: it has no shared Downloads folder at all,
+      // and getDownloadsDirectory would either throw or point somewhere the
+      // user cannot reach. Its files go to Documents, which UIFileSharingEnabled
+      // surfaces in the Files app under "On My iPhone".
       try {
         final Directory? downloads = await getDownloadsDirectory();
         if (downloads != null) return p.join(downloads.path, folderName);
@@ -54,6 +58,9 @@ class StorageService {
   /// path would send someone looking in the wrong place.
   static String userFacingLocation(String? path) {
     if (Platform.isAndroid) return 'Downloads/$folderName';
+    // What the Files app calls it, not the container path underneath, which
+    // means nothing to anyone looking for their file.
+    if (Platform.isIOS) return 'On My iPhone / $folderName';
     return path == null || path.isEmpty ? 'Resolving...' : path;
   }
 

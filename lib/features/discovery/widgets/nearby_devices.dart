@@ -10,6 +10,7 @@ import '../../../shared/widgets/fade_slide_in.dart';
 import '../../../shared/widgets/hoza_card.dart';
 import '../../../shared/widgets/pulse_icon.dart';
 import '../../../shared/widgets/radar_pulse.dart';
+import '../../connection/connection_controller.dart';
 import '../discovery_controller.dart';
 import 'device_tile.dart';
 
@@ -88,6 +89,14 @@ class NearbyDevices extends StatelessWidget {
       );
     }
 
+    // Discovery beacons say what a device is offering, not what it is doing
+    // with this one. The live session is the connection's to know, so the row
+    // for the device we are actually talking to is marked here - and that is
+    // the only row that gets a way to hang up.
+    final ConnectionController connection =
+        context.watch<ConnectionController>();
+    final HozaDevice? peer = connection.isConnected ? connection.peer : null;
+
     return Column(
       key: const ValueKey<String>('devices'),
       children: <Widget>[
@@ -101,13 +110,29 @@ class NearbyDevices extends StatelessWidget {
               // others appear and disappear around it.
               key: ValueKey<String>(devices[i].id),
               index: i,
-              child: DeviceTile(
-                device: devices[i],
-                onTap: () => onSelect(devices[i]),
-              ),
+              child: _tile(devices[i], peer, connection),
             ),
           ),
       ],
+    );
+  }
+
+  Widget _tile(
+    HozaDevice device,
+    HozaDevice? peer,
+    ConnectionController connection,
+  ) {
+    // Matched on address as well as id: a session this device accepted was
+    // built from the socket, and its id need not be the one the beacon
+    // advertised.
+    final bool live = peer != null &&
+        (peer.id == device.id || peer.address == device.address);
+    if (!live) return DeviceTile(device: device, onTap: () => onSelect(device));
+
+    return DeviceTile(
+      device: device.copyWith(status: DeviceStatus.connected),
+      onTap: () => onSelect(device),
+      onDisconnect: connection.disconnect,
     );
   }
 }

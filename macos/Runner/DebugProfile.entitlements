@@ -6,7 +6,27 @@
 	<true/>
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
+
+	<!-- Listening for other devices: the TCP server on 47821 and the UDP
+	     discovery socket on 47820. Without this the sockets fail to bind and
+	     the app looks like it is working while finding nothing. -->
 	<key>com.apple.security.network.server</key>
+	<true/>
+
+	<!-- Connecting out to a device the user picked, and sending the discovery
+	     beacons. The template ships without this, which is the single most
+	     common reason a sandboxed Flutter app cannot reach the network. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- Reading the files the user chose in the picker. The sandbox grants
+	     access per file as it is selected; without this the picker returns
+	     paths that cannot be opened. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!-- Writing received files into ~/Downloads/HozaSend. -->
+	<key>com.apple.security.files.downloads.read-write</key>
 	<true/>
 </dict>
 </plist>

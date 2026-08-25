@@ -6,6 +6,7 @@ import '../../../app/theme/app_tokens.dart';
 import '../../../core/models/transfer.dart';
 import '../../../core/services/open_service.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/pill_button.dart';
 import '../../selection/widgets/file_card.dart';
 
 /// One file in a transfer, in both of the places a person meets one: the
@@ -83,17 +84,10 @@ class ReceivedFileRow extends StatelessWidget {
           // discover; a button that says Open is something they can see.
           if (openable) ...<Widget>[
             const SizedBox(width: Insets.xs),
-            TextButton.icon(
+            PillButton(
+              icon: Icons.open_in_new_rounded,
+              label: 'Open',
               onPressed: () => openReceivedFile(context, file),
-              icon: const Icon(Icons.open_in_new_rounded, size: 15),
-              label: const Text('Open'),
-              style: TextButton.styleFrom(
-                foregroundColor: c.primary,
-                textStyle: context.text.labelSmall,
-                padding: const EdgeInsets.symmetric(horizontal: Insets.sm),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
             ),
           ],
         ],

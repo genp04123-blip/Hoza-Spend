@@ -268,6 +268,7 @@ class HozaSecondaryButton extends StatefulWidget {
     this.expand = true,
     this.compact = false,
     this.edge,
+    this.foreground,
   });
 
   final String label;
@@ -283,6 +284,11 @@ class HozaSecondaryButton extends StatefulWidget {
   /// stops looking like a copy of the one above it.
   final ButtonEdge? edge;
 
+  /// Overrides the label and icon colour. For an action whose meaning is a
+  /// colour - a green confirmation, a red undo - where the text carrying it is
+  /// clearer than another full-width coloured slab.
+  final Color? foreground;
+
   @override
   State<HozaSecondaryButton> createState() => _HozaSecondaryButtonState();
 }
@@ -294,7 +300,8 @@ class _HozaSecondaryButtonState extends State<HozaSecondaryButton> {
   Widget build(BuildContext context) {
     final AppColors c = context.colors;
     final bool enabled = widget.onPressed != null;
-    final Color foreground = enabled ? c.textPrimary : c.textTertiary;
+    final Color foreground =
+        enabled ? (widget.foreground ?? c.textPrimary) : c.textTertiary;
     final bool small = widget.compact;
     final ButtonEdge edge = widget.edge ?? ButtonEdge(color: c.accent);
 

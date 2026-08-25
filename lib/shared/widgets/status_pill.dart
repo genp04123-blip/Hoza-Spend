@@ -36,6 +36,13 @@ class StatusPill extends StatelessWidget {
       StatusTone.negative => (c.danger, c.dangerSoft),
     };
 
+    // A failure is the one status that should not read like an ordinary label.
+    // The text takes the tone as well as the dot - but pulled most of the way
+    // there rather than all of it, so it stays a statement and not an alarm.
+    final Color text = tone == StatusTone.negative
+        ? Color.lerp(c.textPrimary, dot, 0.72) ?? dot
+        : c.textPrimary;
+
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: Insets.md,
@@ -53,7 +60,7 @@ class StatusPill extends StatelessWidget {
           Text(
             label,
             style: context.text.bodySmall?.copyWith(
-              color: c.textPrimary,
+              color: text,
               fontWeight: FontWeight.w500,
             ),
           ),

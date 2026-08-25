@@ -45,7 +45,26 @@ class OpenService {
     final String? target = _target(file);
     if (target == null) return false;
     if (Platform.isAndroid) return _openOnAndroid(target, file.name);
+    // macOS goes through the same channel rather than a command: the App
+    // Sandbox blocks a sandboxed process from driving LaunchServices, so
+    // `open` fails there - quietly, which is worse than failing loudly.
+    if (Platform.isMacOS) return _openOnMacOS(target);
     return _openOnDesktop(target);
+  }
+
+  static Future<bool> _openOnMacOS(String target) async {
+    try {
+      final bool? opened = await _channel.invokeMethod<bool>(
+        'openFile',
+        <String, Object?>{'target': target},
+      );
+      return opened ?? false;
+    } on PlatformException catch (error) {
+      Log.warn(_tag, 'Could not open file: ${error.message}');
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
   }
 
   /// What to hand the OS, or null if there is nothing openable.
@@ -97,9 +116,9 @@ class OpenService {
         // The empty argument is `start`'s window title. Without it, a quoted
         // path is taken as the title and nothing opens.
         result = await Process.run('cmd', <String>['/c', 'start', '', path]);
-      } else if (Platform.isMacOS) {
-        result = await Process.run('open', <String>[path]);
       } else {
+        // Linux only. macOS is handled by the channel above, because a
+        // sandboxed app cannot spawn `open`.
         result = await Process.run('xdg-open', <String>[path]);
       }
       return result.exitCode == 0;

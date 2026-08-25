@@ -51,10 +51,14 @@ dependencies:
 flutter_launcher_icons:
   image_path: "assets/icon/hoza_icon.png"
   android: true
+  ios: true
   windows:
     generate: true
     image_path: "assets/icon/hoza_icon.png"
     icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/icon/hoza_icon.png"
   # The artwork is a folder-and-plane on its own white ground, filling the
   # frame almost corner to corner. A square mark only fits inside the 72dp mask
   # circle if its side stays under about 51dp, which is what an inset of 26

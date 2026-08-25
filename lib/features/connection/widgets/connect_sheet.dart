@@ -190,9 +190,15 @@ class _ConnectSheetState extends State<_ConnectSheet> {
             onPressed: _waitToReceive,
           ),
           const SizedBox(height: Insets.md),
+          // Just closes the sheet. It used to hang up as well, which meant the
+          // only way out of this screen was to undo the pairing that had just
+          // been made - green, and named for what it is: the session stays up,
+          // and Disconnect now lives next to the device itself.
           HozaSecondaryButton(
-            label: 'Done',
-            onPressed: () => _close(connection.disconnect),
+            label: 'OK',
+            foreground: c.success,
+            edge: ButtonEdge(color: c.success),
+            onPressed: () => _close(() {}),
           ),
         ];
 

@@ -157,7 +157,10 @@ class _HomeScreenState extends State<HomeScreen> {
   (String, StatusTone, bool) _networkStatus(DiscoveryController discovery) {
     return switch (discovery.network) {
       NetworkState.checking => ('Checking network', StatusTone.working, true),
-      NetworkState.offline => ('No local network', StatusTone.warning, false),
+      // The one state where nothing can work at all. Said flatly and in red:
+      // every other line on this screen is about finding devices, and none of
+      // it means anything until this device is on a network.
+      NetworkState.offline => ('Not connected', StatusTone.negative, false),
       NetworkState.ready => discovery.isSearching
           ? ('Looking for devices', StatusTone.working, true)
           : ('Connected to local network', StatusTone.positive, false),

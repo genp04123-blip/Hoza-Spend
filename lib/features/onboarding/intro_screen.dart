@@ -1,5 +1,4 @@
-import 'dart:io';
-
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -80,17 +79,34 @@ class _IntroScreenState extends State<IntroScreen> {
     ),
     _IntroPage(
       title: 'Three things to know',
-      body: Platform.isWindows
-          ? 'The first time you run HozaSend, Windows asks about the firewall. '
-              'Allow it, or other devices will never find this one.'
-          : 'Keep HozaSend open on the other device while you transfer.',
+      // Each platform has one thing that silently stops discovery, and it is
+      // different on each. Naming the right one is the whole point of this
+      // page.
+      body: switch (defaultTargetPlatform) {
+        TargetPlatform.windows =>
+          'The first time you run HozaSend, Windows asks about the firewall. '
+              'Allow it, or other devices will never find this one.',
+        TargetPlatform.macOS =>
+          'The first time you run HozaSend, macOS asks whether it may use the '
+              'local network. Allow it, or other devices will never find this '
+              'one.',
+        TargetPlatform.iOS =>
+          'The first time you run HozaSend, iOS asks whether it may use the '
+              'local network. Allow it, or other devices will never find this '
+              'one.',
+        _ => 'Keep HozaSend open on the other device while you transfer.',
+      },
       build: (bool active) => IntroChecklist(
         items: <String>[
           'Both devices on the same Wi-Fi or hotspot',
-          if (Platform.isWindows)
-            'Allow HozaSend through the Windows firewall'
-          else
-            'Keep the screen on while transferring',
+          switch (defaultTargetPlatform) {
+            TargetPlatform.windows =>
+              'Allow HozaSend through the Windows firewall',
+            TargetPlatform.macOS ||
+            TargetPlatform.iOS =>
+              'Allow HozaSend to use the local network',
+            _ => 'Keep the screen on while transferring',
+          },
           'Keep HozaSend open on both devices',
         ],
       ),

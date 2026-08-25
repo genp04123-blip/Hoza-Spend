@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Hoza Send</string>
+	<string>HozaSend</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,6 +25,36 @@
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!-- iOS 14 and later asks the user before an app may touch the local
+	     network, and shows this sentence in the prompt. Without the key the
+	     prompt appears unexplained, and a user who declines leaves discovery
+	     permanently silent with no way back except Settings. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>HozaSend finds nearby devices on your Wi-Fi or hotspot so you can send files directly to them. Nothing is ever sent over the internet.</string>
+
+	<!-- The Bonjour service HozaSend advertises and browses for. iOS requires
+	     every service type an app uses to be declared here up front; anything
+	     not listed is refused at runtime.
+
+	     This is also the route around iOS's block on UDP broadcast: broadcast
+	     needs an entitlement Apple grants case by case, while Bonjour needs
+	     only this key and the permission above. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_hozasend._udp</string>
+		<string>_hozasend._tcp</string>
+	</array>
+
+	<!-- Received files land in the app's Documents folder, and these two keys
+	     are what make that folder visible in the Files app under
+	     "On My iPhone". iOS has no shared Downloads folder to write into, so
+	     without them a received file would exist somewhere the user can never
+	     reach it. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

@@ -46,7 +46,6 @@ app.*.map.json
 
 # Windows installer output
 /dist/
-/release/
 
 # IDE project files, regenerated on open
 *.iml

@@ -48,12 +48,30 @@ class DeviceIdentity {
         final WindowsDeviceInfo windows = await info.windowsInfo;
         final String name = windows.computerName.trim();
         if (name.isNotEmpty) return _trim(name);
+      } else if (Platform.isIOS) {
+        // The name from Settings - "Rayan's iPhone" - which is exactly what
+        // the user expects other devices to call this one.
+        final IosDeviceInfo ios = await info.iosInfo;
+        final String name = ios.name.trim();
+        if (name.isNotEmpty) return _trim(name);
+      } else if (Platform.isMacOS) {
+        // The name the user set in System Settings - "Rayan's MacBook Pro" -
+        // rather than the host name, which is the same thing mangled into
+        // "Rayans-MacBook-Pro.local".
+        final MacOsDeviceInfo mac = await info.macOsInfo;
+        final String name = mac.computerName.trim();
+        if (name.isNotEmpty) return _trim(name);
       }
     } catch (_) {
       // Fall through to the host name, then to the platform label.
     }
     try {
-      final String host = Platform.localHostname.trim();
+      String host = Platform.localHostname.trim();
+      // Bonjour hands back "something.local"; the suffix is noise in a device
+      // list where every entry would carry it.
+      if (host.endsWith('.local')) {
+        host = host.substring(0, host.length - '.local'.length);
+      }
       if (host.isNotEmpty && host != 'localhost') return _trim(host);
     } catch (_) {
       // Some sandboxes deny the host name; the platform label still works.

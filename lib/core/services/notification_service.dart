@@ -26,9 +26,14 @@ class NotificationService {
 
   static bool _ready = false;
 
-  static bool get isSupported => Platform.isAndroid;
+  /// Windows is excluded on purpose: notifications there need an app
+  /// registration and a GUID for something a desktop user is already looking
+  /// at. macOS needs neither, and its Notification Centre is where a Mac user
+  /// expects a finished transfer to appear.
+  static bool get isSupported =>
+      Platform.isAndroid || Platform.isMacOS || Platform.isIOS;
 
-  static const AndroidNotificationDetails _details =
+  static const AndroidNotificationDetails _android =
       AndroidNotificationDetails(
     'transfers',
     'Transfers',
@@ -37,20 +42,57 @@ class NotificationService {
     priority: Priority.high,
   );
 
-  /// Sets up the channel and asks for permission on Android 13 and later.
-  /// Safe to call more than once.
+  static const DarwinNotificationDetails _darwin = DarwinNotificationDetails(
+    presentAlert: true,
+    presentBanner: true,
+    presentSound: false,
+  );
+
+  static const NotificationDetails _details = NotificationDetails(
+    android: _android,
+    macOS: _darwin,
+    iOS: _darwin,
+  );
+
+  /// Sets up the channel and asks for permission. Safe to call more than once.
   static Future<void> initialize() async {
     if (!isSupported || _ready) return;
     try {
       await _plugin.initialize(
         settings: const InitializationSettings(
           android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          // Asked for explicitly below instead, so the prompt appears at a
+          // moment the user can connect to something rather than the instant
+          // the app opens.
+          macOS: DarwinInitializationSettings(
+            requestAlertPermission: false,
+            requestBadgePermission: false,
+            requestSoundPermission: false,
+          ),
+          iOS: DarwinInitializationSettings(
+            requestAlertPermission: false,
+            requestBadgePermission: false,
+            requestSoundPermission: false,
+          ),
         ),
       );
-      await _plugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
+
+      if (Platform.isAndroid) {
+        await _plugin
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>()
+            ?.requestNotificationsPermission();
+      } else if (Platform.isIOS) {
+        await _plugin
+            .resolvePlatformSpecificImplementation<
+                IOSFlutterLocalNotificationsPlugin>()
+            ?.requestPermissions(alert: true, badge: true, sound: false);
+      } else {
+        await _plugin
+            .resolvePlatformSpecificImplementation<
+                MacOSFlutterLocalNotificationsPlugin>()
+            ?.requestPermissions(alert: true, badge: true, sound: false);
+      }
       _ready = true;
     } catch (error) {
       Log.warn(_tag, 'Could not set up notifications: $error');
@@ -114,7 +156,7 @@ class NotificationService {
         title: title,
         // Notification text is a summary, never file contents or a path.
         body: body.split('\n').first,
-        notificationDetails: const NotificationDetails(android: _details),
+        notificationDetails: _details,
       );
     } catch (error) {
       Log.warn(_tag, 'Could not post notification: $error');
