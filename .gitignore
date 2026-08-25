@@ -46,3 +46,25 @@ app.*.map.json
 
 # Windows installer output
 /dist/
+/release/
+
+# IDE project files, regenerated on open
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Working notes and briefs, not part of the app
+CLAUDE.md*
+*.md.bak
+
+# Loose source art and captures dropped in the project root while iterating.
+# Anything the repo actually needs lives in assets/ or docs/.
+/*.png
+/*.jpg
+/*.jpeg
+/Screenshot*
+
+# ...but the README's screenshots and the app icon are part of the repo.
+!/docs/screenshots/*.png
+!/assets/icon/*.png
