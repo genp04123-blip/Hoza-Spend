@@ -59,17 +59,24 @@ sweeping for devices. Same codebase, same design, laid out for each screen.*
 
 ## Install
 
+Grab the newest build from the [**Releases**](../../releases/latest) page —
+the `.zip` for Windows, the `.apk` for Android. Step-by-step instructions,
+including the firewall prompt and the SmartScreen and Play Protect warnings,
+are in **[INSTALL.md](INSTALL.md)**.
+
 ### Windows
 
-Download the installer and run it. One self-contained `Setup.exe` — the app,
-the Flutter runtime and every dependency are inside it.
+Extract the zip somewhere it can stay — the `.exe` needs the DLLs and the
+`data\` folder beside it — and run `hoza_send.exe`.
 
-It offers to add the firewall rules during install. **Say yes** — a blocked
-firewall is the single most common reason two devices never see each other.
+The first launch asks about the firewall. **Allow it on private networks** — a
+blocked firewall is the single most common reason two devices never see each
+other.
 
 ### Android
 
-Install the APK. HozaSend asks for notification permission on first launch;
+Install the APK; Android will ask you to allow installs from your browser
+first. HozaSend then asks for notification permission on first launch;
 declining only costs the alerts.
 
 ### Build it yourself

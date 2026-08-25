@@ -413,6 +413,21 @@ class _Actions extends StatelessWidget {
     Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
   }
 
+  /// The file that just arrived, when exactly one did and this device can open
+  /// it.
+  ///
+  /// Only for a single file. With several, the list above is where they open
+  /// from - one button at the bottom of the screen cannot say which one it
+  /// means.
+  TransferFile? get _singleReceivedFile {
+    if (transfer.isSending || transfer.status != TransferStatus.completed) {
+      return null;
+    }
+    if (transfer.files.length != 1) return null;
+    final TransferFile file = transfer.files.first;
+    return OpenService.canOpen(file) ? file : null;
+  }
+
   /// The folder the received files landed in, when this platform can open one.
   String? get _savedFolder {
     if (transfer.isSending || transfer.status != TransferStatus.completed) {
@@ -456,6 +471,16 @@ class _Actions extends StatelessWidget {
             icon: Icons.check_rounded,
             onPressed: () => _finish(context),
           ),
+          // The next thing a person wants after receiving one file is to look
+          // at it, and until now the only way was to go and find it.
+          if (_singleReceivedFile case final TransferFile file) ...<Widget>[
+            const SizedBox(height: Insets.md),
+            HozaSecondaryButton(
+              label: 'Open File',
+              icon: Icons.open_in_new_rounded,
+              onPressed: () => unawaited(openReceivedFile(context, file)),
+            ),
+          ],
           if (folder != null) ...<Widget>[
             const SizedBox(height: Insets.md),
             HozaSecondaryButton(

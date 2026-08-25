@@ -19,6 +19,28 @@ import '../../selection/widgets/file_card.dart';
 /// A row that cannot be opened - a file this device sent, a transfer that
 /// never finished, a history entry from before the app kept the handle - draws
 /// as a plain line with no affordance rather than a tap that does nothing.
+/// Opens [file] in whatever the user chooses, and says so if it cannot be
+/// opened at all.
+///
+/// One function for every Open in the app, so the failure reads the same
+/// wherever it happens.
+Future<void> openReceivedFile(BuildContext context, TransferFile file) async {
+  // Taken before the await: the widget may be gone by the time the OS answers.
+  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+  if (await OpenService.open(file)) return;
+
+  // Worth saying out loud. Silence here reads as the app being broken, when in
+  // fact there is simply nothing installed that opens this kind of file.
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text(
+        'Could not open ${file.name}. It may have been moved, or nothing '
+        'on this device opens this kind of file.',
+      ),
+    ),
+  );
+}
+
 class ReceivedFileRow extends StatelessWidget {
   const ReceivedFileRow({
     super.key,
@@ -28,23 +50,6 @@ class ReceivedFileRow extends StatelessWidget {
 
   final TransferFile file;
   final double thumbnailSize;
-
-  Future<void> _open(BuildContext context) async {
-    // Taken before the await: the row may be gone by the time the OS answers.
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    if (await OpenService.open(file)) return;
-
-    // Worth saying out loud. Silence here reads as the app being broken, when
-    // in fact there is simply nothing installed that opens this kind of file.
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          'Could not open ${file.name}. It may have been moved, or nothing '
-          'on this device opens this kind of file.',
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,9 +78,23 @@ class ReceivedFileRow extends StatelessWidget {
             Formatters.bytes(file.size),
             style: context.text.bodySmall?.copyWith(color: c.textTertiary),
           ),
+          // A named button, not a hint. The whole row opens the file too, but
+          // a row that happens to be tappable is something a person has to
+          // discover; a button that says Open is something they can see.
           if (openable) ...<Widget>[
-            const SizedBox(width: Insets.sm),
-            Icon(Icons.open_in_new_rounded, size: 15, color: c.textTertiary),
+            const SizedBox(width: Insets.xs),
+            TextButton.icon(
+              onPressed: () => openReceivedFile(context, file),
+              icon: const Icon(Icons.open_in_new_rounded, size: 15),
+              label: const Text('Open'),
+              style: TextButton.styleFrom(
+                foregroundColor: c.primary,
+                textStyle: context.text.labelSmall,
+                padding: const EdgeInsets.symmetric(horizontal: Insets.sm),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
           ],
         ],
       ),
@@ -84,7 +103,7 @@ class ReceivedFileRow extends StatelessWidget {
     if (!openable) return row;
 
     return InkWell(
-      onTap: () => _open(context),
+      onTap: () => openReceivedFile(context, file),
       borderRadius: BorderRadius.circular(Radii.xs),
       child: row,
     );

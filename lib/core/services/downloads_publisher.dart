@@ -73,19 +73,66 @@ class DownloadsPublisher {
     }
   }
 
+  /// Extension to mime type.
+  ///
+  /// Long on purpose. This one map decides which app a received file opens in:
+  /// a photo reaches the gallery, an APK reaches the installer, an `.epub`
+  /// reaches a reader - and anything missing from here falls back to "some
+  /// file", which is how a file ends up offering a choice of nothing. It is
+  /// cheaper to list an extension than to explain why a file will not open.
   static const Map<String, String> _types = <String, String>{
-    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
-    'gif': 'image/gif', 'webp': 'image/webp', 'heic': 'image/heic',
-    'bmp': 'image/bmp', 'svg': 'image/svg+xml',
+    // Images
+    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'jfif': 'image/jpeg',
+    'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp',
+    'heic': 'image/heic', 'heif': 'image/heif', 'avif': 'image/avif',
+    'bmp': 'image/bmp', 'svg': 'image/svg+xml', 'ico': 'image/x-icon',
+    'tif': 'image/tiff', 'tiff': 'image/tiff', 'raw': 'image/x-panasonic-raw',
+    'dng': 'image/x-adobe-dng', 'psd': 'image/vnd.adobe.photoshop',
+    // Video
     'mp4': 'video/mp4', 'mkv': 'video/x-matroska', 'mov': 'video/quicktime',
     'avi': 'video/x-msvideo', 'webm': 'video/webm', 'm4v': 'video/x-m4v',
+    '3gp': 'video/3gpp', 'flv': 'video/x-flv', 'wmv': 'video/x-ms-wmv',
+    'mpg': 'video/mpeg', 'mpeg': 'video/mpeg', 'ts': 'video/mp2t',
+    // Audio
     'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'flac': 'audio/flac',
-    'aac': 'audio/aac', 'ogg': 'audio/ogg', 'm4a': 'audio/mp4',
+    'aac': 'audio/aac', 'ogg': 'audio/ogg', 'oga': 'audio/ogg',
+    'opus': 'audio/opus', 'm4a': 'audio/mp4', 'wma': 'audio/x-ms-wma',
+    'amr': 'audio/amr', 'mid': 'audio/midi', 'midi': 'audio/midi',
+    // Documents
     'pdf': 'application/pdf', 'txt': 'text/plain', 'md': 'text/markdown',
+    'rtf': 'application/rtf', 'csv': 'text/csv', 'epub': 'application/epub+zip',
+    'mobi': 'application/x-mobipocket-ebook', 'djvu': 'image/vnd.djvu',
+    'odt': 'application/vnd.oasis.opendocument.text',
+    'ods': 'application/vnd.oasis.opendocument.spreadsheet',
+    'odp': 'application/vnd.oasis.opendocument.presentation',
+    // Web and data
+    'html': 'text/html', 'htm': 'text/html', 'css': 'text/css',
+    'json': 'application/json', 'xml': 'text/xml', 'yaml': 'text/yaml',
+    'yml': 'text/yaml', 'toml': 'text/plain', 'ini': 'text/plain',
+    'log': 'text/plain', 'sql': 'text/plain', 'srt': 'application/x-subrip',
+    'vcf': 'text/x-vcard', 'ics': 'text/calendar',
+    // Code. All text: whatever editor the device has will take them.
+    'dart': 'text/plain', 'js': 'text/javascript',
+    'py': 'text/x-python', 'java': 'text/x-java-source', 'kt': 'text/plain',
+    'c': 'text/x-c', 'h': 'text/x-c', 'cpp': 'text/x-c', 'cs': 'text/plain',
+    'go': 'text/plain', 'rs': 'text/plain', 'php': 'text/php',
+    'rb': 'text/plain', 'sh': 'text/x-shellscript', 'bat': 'text/plain',
+    'ps1': 'text/plain',
+    // Archives
     'zip': 'application/zip', 'rar': 'application/vnd.rar',
     '7z': 'application/x-7z-compressed', 'gz': 'application/gzip',
-    'tar': 'application/x-tar',
+    'bz2': 'application/x-bzip2', 'xz': 'application/x-xz',
+    'tar': 'application/x-tar', 'iso': 'application/x-iso9660-image',
+    // Installers and binaries
     'apk': 'application/vnd.android.package-archive',
+    'exe': 'application/vnd.microsoft.portable-executable',
+    'msi': 'application/x-msdownload', 'deb': 'application/vnd.debian.binary-package',
+    'rpm': 'application/x-rpm', 'dmg': 'application/x-apple-diskimage',
+    'jar': 'application/java-archive',
+    // Fonts
+    'ttf': 'font/ttf', 'otf': 'font/otf', 'woff': 'font/woff',
+    'woff2': 'font/woff2',
+    // Office
     'doc': 'application/msword',
     'docx':
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

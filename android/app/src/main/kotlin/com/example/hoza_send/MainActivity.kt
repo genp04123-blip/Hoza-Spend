@@ -159,20 +159,43 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mimeType ?: "*/*")
+        // An unknown extension arrives as "some binary", which matches almost
+        // nothing. Offering it as any type instead is the difference between a
+        // chooser with every reader in it and a chooser with nothing in it.
+        val type = if (mimeType.isNullOrEmpty() ||
+            mimeType == "application/octet-stream"
+        ) {
+            "*/*"
+        } else {
+            mimeType
+        }
+
+        val view = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, type)
             // The receiving app is a different process; without this it gets a
             // URI it is not allowed to read.
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        // Asked first, so "nothing here opens this" comes back as an answer the
+        // app can say out loud. A chooser with no apps in it would otherwise
+        // open anyway and leave the user staring at an empty sheet.
+        @Suppress("DEPRECATION")
+        if (packageManager.queryIntentActivities(view, 0).isEmpty()) return false
+
+        // Always the chooser, never a silent hand-off. A photo should reach the
+        // gallery and an APK the installer - but which gallery, and whether
+        // this time it should go to an editor instead, is the user's call, and
+        // a default set once months ago is not an answer to that.
+        val chooser = Intent.createChooser(view, "Open with").apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
         return try {
-            startActivity(intent)
+            startActivity(chooser)
             true
         } catch (error: ActivityNotFoundException) {
-            // Nothing installed opens this kind. Reported back rather than
-            // swallowed, so the app can say so instead of looking broken.
             false
         }
     }
