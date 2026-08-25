@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The window Android paints before Flutter has drawn anything.
+
+     It is the exact colour the Dart splash screen starts on, which is why that
+     screen is pinned to one fixed palette: this colour cannot follow the user's
+     theme, and any difference between the two shows up as a flash on every
+     launch. The Dart screen opens on this flat sky and blooms into its
+     gradient over the first half second, so the handover from the OS window
+     has nothing to give away. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#E9F5FE" />
+        </shape>
+    </item>
+</layer-list>

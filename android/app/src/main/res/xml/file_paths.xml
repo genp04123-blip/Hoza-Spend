@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the app is willing to hand to another app.
+
+     Only ever used on Android 9 and below, where a received file really does
+     land in Downloads by path. From API 29 a published file is a MediaStore
+     row and is opened by its URI instead, which needs none of this. -->
+<paths>
+    <external-path name="external" path="." />
+    <files-path name="files" path="." />
+    <cache-path name="cache" path="." />
+</paths>

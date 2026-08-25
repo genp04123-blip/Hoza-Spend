@@ -1,0 +1,35 @@
+HozaSend is installed.
+
+
+PIN IT TO YOUR TASKBAR
+
+Windows does not let an installer pin anything to the taskbar - Microsoft
+removed that in Windows 10 to stop installers filling it up. It takes one
+moment by hand:
+
+  1. Open HozaSend (the Finish page can do it for you).
+  2. Right-click its icon in the taskbar while it is running.
+  3. Choose "Pin to taskbar".
+
+A desktop shortcut and a Start menu entry were created for you, if you asked
+for them on the previous page.
+
+
+THE FIREWALL
+
+HozaSend finds other devices by broadcasting on your local network. If you did
+not tick the firewall option - or you installed without administrator rights -
+Windows will ask about it the first time you open the app.
+
+Choose ALLOW, and make sure "Private networks" is ticked. If it is blocked,
+HozaSend will run but other devices will never find this computer.
+
+
+HOW IT WORKS
+
+Open HozaSend on this PC and on your phone, both on the same Wi-Fi or the
+phone's hotspot. They find each other automatically. No internet is needed at
+any point, and nothing is ever uploaded anywhere.
+
+
+Rahoz Osman Salim - hozahoza2001@gmail.com
