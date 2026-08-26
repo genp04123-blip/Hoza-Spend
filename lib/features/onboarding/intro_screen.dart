@@ -66,15 +66,20 @@ class _IntroScreenState extends State<IntroScreen> {
   late final List<_IntroPage> _pages = <_IntroPage>[
     _IntroPage(
       title: 'Share without the internet',
-      body: 'HozaSend moves files straight between your devices over Wi-Fi or '
-          'a phone hotspot. Nothing is uploaded, there is no account, and it '
-          'keeps working with no internet at all.',
+      body: 'HozaSend moves files straight between your phones and PCs over '
+          'Wi-Fi or a phone hotspot. Nothing is uploaded, there is no '
+          'account, and it keeps working with no internet at all.',
       build: (bool active) => IntroMark(active: active),
     ),
     _IntroPage(
-      title: 'Open, pick, send',
-      body: 'Open HozaSend on both devices and they find each other '
-          'automatically. Tap the one you want, choose your files, and send.',
+      title: 'Any two devices',
+      // The picture shows all three pairings; this says them in words. That
+      // the app works between two phones, between two PCs, and across the two
+      // is the one thing users do not assume, and the reason they never try.
+      body: 'Phone to phone, phone to Windows, or Windows to Windows - it is '
+          'the same app on both ends. Open HozaSend on each device and they '
+          'find each other automatically. Tap the one you want, choose your '
+          'files, and send.',
       build: (bool active) => IntroTransfer(active: active),
     ),
     _IntroPage(

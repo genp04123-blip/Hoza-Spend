@@ -8,6 +8,7 @@ import '../../app/router.dart';
 import '../../app/theme/app_theme.dart';
 import '../../app/theme/app_tokens.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/services/share_intake_service.dart';
 import '../../shared/widgets/shimmer_text.dart';
 import '../settings/settings_controller.dart';
 
@@ -148,6 +149,10 @@ class _SplashScreenState extends State<SplashScreen>
         (true, true) => AppRoutes.home,
       },
     );
+    // Only now. A file shared into HozaSend opens the send screen on top of
+    // whatever this just decided, and pushing it any earlier would put it
+    // under the route replacing this one.
+    ShareIntake.instance.ready();
   }
 
   /// This screen asks for dark status bar icons, because it is the only pale

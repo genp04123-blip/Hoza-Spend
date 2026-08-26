@@ -29,6 +29,39 @@ class AppRoutes {
   static const String history = '/history';
 }
 
+/// Remembers which screen is on top, for the code above the Navigator that
+/// has to decide whether to open a screen or leave the user where they are.
+///
+/// A share landing while the send screen is already open should quietly add to
+/// what is queued there - not stack a second copy of the same screen on top of
+/// the first.
+class AppRouteObserver extends NavigatorObserver {
+  static String? _current;
+
+  /// The route name on top, or null before the first route settles.
+  static String? get current => _current;
+
+  static void _set(Route<dynamic>? route) {
+    if (route != null) _current = route.settings.name;
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _set(route);
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _set(previousRoute);
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _set(previousRoute);
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      _set(newRoute);
+}
+
 class AppRouter {
   const AppRouter._();
 

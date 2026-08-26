@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_colors.dart';
 import '../../app/theme/app_theme.dart';
 import '../../app/theme/app_tokens.dart';
+import 'edge_light.dart';
 import 'hoza_buttons.dart';
 
 /// A small action that lives inside a row or a card: Open, Open folder,
@@ -24,6 +25,7 @@ class PillButton extends StatefulWidget {
     this.onPressed,
     this.tone,
     this.tooltip,
+    this.edge,
   });
 
   final IconData icon;
@@ -41,6 +43,15 @@ class PillButton extends StatefulWidget {
   /// does.
   final String? tooltip;
 
+  /// Sends a light round the pill's edge, the same language the full buttons
+  /// use at their own scale.
+  ///
+  /// For a small control that has to be found rather than merely offered: a
+  /// tint alone, at this size, reads as a status chip, and a moving edge is
+  /// what says "press me" without growing the control. Colour, pace and
+  /// direction are per call site, so a row of three never laps in formation.
+  final ButtonEdge? edge;
+
   @override
   State<PillButton> createState() => _PillButtonState();
 }
@@ -54,13 +65,19 @@ class _PillButtonState extends State<PillButton> {
     final bool enabled = widget.onPressed != null;
     final Color tone = enabled ? (widget.tone ?? c.primary) : c.textTertiary;
     final bool iconOnly = widget.label == null;
+    final ButtonEdge? edge = widget.edge;
 
     final Widget pill = AnimatedContainer(
       duration: context.motion(Motion.fast),
       curve: Motion.standard,
       padding: iconOnly
           ? const EdgeInsets.all(7)
-          : const EdgeInsets.fromLTRB(9, 5, 11, 5),
+          // A lit pill is given a little more room than a plain one: the light
+          // runs on the edge, and a cramped edge reads as a glowing outline
+          // rather than as a button with something travelling round it.
+          : (edge == null
+              ? const EdgeInsets.fromLTRB(9, 5, 11, 5)
+              : const EdgeInsets.fromLTRB(11, 7, 13, 7)),
       decoration: BoxDecoration(
         // Its own colour at low alpha rather than a surface colour: the fill
         // has to belong to the action, or a row of pills all reads the same.
@@ -89,6 +106,21 @@ class _PillButtonState extends State<PillButton> {
       ),
     );
 
+    final Widget surface = edge == null
+        ? pill
+        : EdgeLight(
+            radius: Radii.pill,
+            color: edge.color,
+            active: enabled,
+            // Thinner and dimmer than a full button's: the same effect at the
+            // same strength on a pill this size would read as neon.
+            width: 1.1,
+            intensity: enabled ? (_hovered ? 1 : 0.7) : 0,
+            duration: edge.period ?? Motion.edge,
+            reverse: edge.reverse,
+            child: pill,
+          );
+
     final Widget pressable = PressableScale(
       onTap: widget.onPressed,
       // Tighter than a full button: a 40-pixel pill dipping as far as a 56
@@ -99,7 +131,7 @@ class _PillButtonState extends State<PillButton> {
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
-        child: pill,
+        child: surface,
       ),
     );
 

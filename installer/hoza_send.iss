@@ -69,6 +69,14 @@ Name: "desktopicon"; \
   Description: "Create a shortcut on my &desktop"; \
   GroupDescription: "Shortcuts:"
 
+Name: "sendto"; \
+  Description: "Add HozaSend to the right-click ''Send to'' menu"; \
+  GroupDescription: "Sharing:"
+
+Name: "shellmenu"; \
+  Description: "Add ''Send with HozaSend'' to the right-click menu"; \
+  GroupDescription: "Sharing:"
+
 Name: "firewall"; \
   Description: "Allow HozaSend through Windows Firewall on private networks"; \
   GroupDescription: "Network:"; \
@@ -85,6 +93,47 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; \
   Comment: "Share files over your local network, with no internet"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; \
   Tasks: desktopicon
+; Right-click a file, Send to, HozaSend. The oldest and least surprising way
+; Windows has of saying "hand this file to that app".
+Name: "{usersendto}\{#AppName}"; Filename: "{app}\{#AppExeName}"; \
+  Comment: "Send this file with {#AppName}"; Tasks: sendto
+
+[Registry]
+; Puts HozaSend in the "Open with" list for every kind of file, under its own
+; name rather than the exe's.
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExeName}"; \
+  ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#AppName}"; \
+  Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExeName}\shell\open\command"; \
+  ValueType: string; ValueData: """{app}\{#AppExeName}"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExeName}\SupportedTypes"; \
+  ValueType: string; ValueName: "*"; ValueData: ""
+
+; And a verb of its own on the file menu, for everyone who never goes looking
+; under Send to. Windows starts one process per selected file; the app is
+; single-instance and hands each one to the window already open, so a
+; multi-selection arrives as a single queue rather than several windows.
+Root: HKA; Subkey: "Software\Classes\*\shell\{#AppName}"; \
+  ValueType: string; ValueData: "Send with {#AppName}"; \
+  Flags: uninsdeletekey; Tasks: shellmenu
+Root: HKA; Subkey: "Software\Classes\*\shell\{#AppName}"; \
+  ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#AppExeName}"",0"; \
+  Tasks: shellmenu
+Root: HKA; Subkey: "Software\Classes\*\shell\{#AppName}\command"; \
+  ValueType: string; ValueData: """{app}\{#AppExeName}"" ""%1"""; \
+  Tasks: shellmenu
+
+; The same on a folder, which sends everything inside it.
+Root: HKA; Subkey: "Software\Classes\Directory\shell\{#AppName}"; \
+  ValueType: string; ValueData: "Send with {#AppName}"; \
+  Flags: uninsdeletekey; Tasks: shellmenu
+Root: HKA; Subkey: "Software\Classes\Directory\shell\{#AppName}"; \
+  ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#AppExeName}"",0"; \
+  Tasks: shellmenu
+Root: HKA; Subkey: "Software\Classes\Directory\shell\{#AppName}\command"; \
+  ValueType: string; ValueData: """{app}\{#AppExeName}"" ""%1"""; \
+  Tasks: shellmenu
+
 
 [Run]
 ; Two rules, because discovery is UDP and the transfer itself is TCP. Adding

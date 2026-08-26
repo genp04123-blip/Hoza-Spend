@@ -65,6 +65,23 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- What puts HozaSend in the system share sheet, next to the
+                 messaging apps. Any type, because a share carries whatever the
+                 other app had: a photo from the gallery, a PDF from a file
+                 manager, a document from an editor. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="*/*"/>
+            </intent-filter>
+            <!-- The same thing for a multi-select: sharing thirty photos at
+                 once sends a different action, and without this HozaSend would
+                 be offered for one file and missing for thirty. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="*/*"/>
+            </intent-filter>
         </activity>
         <!-- Keeps the process alive while a session is live, so a transfer
              survives the user switching to another app. Not exported: nothing

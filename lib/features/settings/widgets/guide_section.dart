@@ -24,6 +24,20 @@ class GuideSection extends StatelessWidget {
       title: 'Guide',
       children: <Widget>[
         const _NetworkRule(),
+        // Before the steps, because the steps are useless to someone who
+        // has already decided the app is not for their pair of devices. Every
+        // combination works, and none of them is a different mode.
+        const _GuideEntry(
+          icon: Icons.devices_rounded,
+          title: 'What it works between',
+          lines: <String>[
+            'Phone to phone, phone to Windows, or Windows to Windows. It is '
+                'the same app on both ends, and the steps below are the same '
+                'whichever pair you have.',
+            'Either device can send and either can receive. There is no host '
+                'and no main device.',
+          ],
+        ),
         const _GuideEntry(
           icon: Icons.send_rounded,
           title: 'Sending files',
@@ -34,6 +48,28 @@ class GuideSection extends StatelessWidget {
             'Accept the request on the other device. Check the six digit code '
                 'matches on both screens.',
             'Choose your files and tap Send.',
+          ],
+        ),
+        // Placed straight after the steps, because it is the shortest route to
+        // the same place and almost nobody finds it on their own: the app has
+        // to be opened from inside the app that already has the file.
+        _GuideEntry(
+          icon: Icons.ios_share_rounded,
+          title: 'Sending from another app',
+          lines: <String>[
+            if (Platform.isAndroid || Platform.isIOS)
+              'Share a photo, a document, anything - and pick HozaSend from '
+                  'the share sheet. It opens with that file already queued, so '
+                  'all that is left is choosing the device.'
+            else
+              'Right-click a file in Explorer and choose Send to > HozaSend, '
+                  'or Send with HozaSend. It opens with that file already '
+                  'queued, so all that is left is choosing the device.',
+            if (!Platform.isAndroid && !Platform.isIOS)
+              'A whole folder works the same way, and so does dropping files '
+                  'straight onto the HozaSend window.',
+            'Sharing into HozaSend while it is already open adds to what is '
+                'queued rather than starting again.',
           ],
         ),
         const _GuideEntry(

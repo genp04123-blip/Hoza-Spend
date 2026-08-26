@@ -5,6 +5,7 @@ import '../../../app/theme/app_theme.dart';
 import '../../../app/theme/app_tokens.dart';
 import '../../../shared/widgets/hoza_logo.dart';
 import '../../../shared/widgets/radar_pulse.dart';
+import '../../../shared/widgets/transfer_modes.dart';
 
 /// Page one: the mark inside a live radar sweep.
 class IntroMark extends StatelessWidget {
@@ -22,11 +23,16 @@ class IntroMark extends StatelessWidget {
   }
 }
 
-/// Page two: two devices with something travelling between them.
+/// Page two: every pairing HozaSend supports, each with something travelling
+/// across it.
 ///
-/// Animated rather than a static diagram because the one thing this page has
-/// to communicate is direction - which way the file goes, and that it goes
-/// straight across rather than up to somewhere and back down.
+/// Three lanes rather than one, because the single phone-to-Windows diagram
+/// that used to live here quietly answered a question nobody asked and left
+/// the two that people do ask - "can it go phone to phone?" and "can it go
+/// between two PCs?" - looking like a no.
+///
+/// Animated rather than static because direction is the point: the file goes
+/// straight across, not up to somewhere and back down.
 class IntroTransfer extends StatefulWidget {
   const IntroTransfer({super.key, this.active = true});
 
@@ -66,90 +72,133 @@ class _IntroTransferState extends State<IntroTransfer>
 
   @override
   Widget build(BuildContext context) {
-    final AppColors c = context.colors;
+    const List<TransferMode> modes = TransferMode.all;
 
     return SizedBox(
       height: 210,
-      child: Stack(
-        alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: <Widget>[
-          // The path between the two devices.
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 92),
-            child: Container(height: 2, color: c.border),
-          ),
-          AnimatedBuilder(
-            animation: _controller,
-            builder: (BuildContext context, Widget? child) {
-              final double t = Curves.easeInOutCubic.transform(
-                _controller.value,
-              );
-              return Align(
-                // Stays between the two device cards at any width, because the
-                // alignment is fractional rather than a measured offset.
-                alignment: Alignment(-0.52 + 1.04 * t, 0),
-                child: Opacity(
-                  // Fades in and out at the ends so it appears to leave one
-                  // device and arrive at the other.
-                  opacity: (1 - (t - 0.5).abs() * 2).clamp(0.25, 1.0),
-                  child: child,
-                ),
-              );
-            },
-            child: Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                gradient: c.brandGradient,
-                shape: BoxShape.circle,
-              ),
+          for (int i = 0; i < modes.length; i++)
+            _TransferLane(
+              mode: modes[i],
+              animation: _controller,
+              // Offset so the three read as three separate journeys rather
+              // than one bar of dots moving in formation.
+              phase: i / modes.length,
             ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const <Widget>[
-              _DeviceChip(icon: Icons.smartphone_rounded, label: 'Phone'),
-              _DeviceChip(
-                icon: Icons.desktop_windows_rounded,
-                label: 'Windows',
-              ),
-            ],
-          ),
         ],
       ),
     );
   }
 }
 
-class _DeviceChip extends StatelessWidget {
-  const _DeviceChip({required this.icon, required this.label});
+/// One pairing: two devices, a track between them, and a file crossing it.
+class _TransferLane extends StatelessWidget {
+  const _TransferLane({
+    required this.mode,
+    required this.animation,
+    required this.phase,
+  });
 
-  final IconData icon;
-  final String label;
+  final TransferMode mode;
+  final Animation<double> animation;
+
+  /// Where in the loop this lane starts, 0 to 1.
+  final double phase;
 
   @override
   Widget build(BuildContext context) {
     final AppColors c = context.colors;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Container(
-          width: 84,
-          height: 84,
-          decoration: BoxDecoration(
-            gradient: c.surfaceGradient,
-            borderRadius: BorderRadius.circular(Radii.lg),
-            border: Border.all(color: c.border),
-            boxShadow: c.softShadow,
+        SizedBox(
+          height: 44,
+          child: Row(
+            children: <Widget>[
+              _DeviceChip(icon: mode.from),
+              Expanded(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: Insets.sm),
+                      child: _Track(),
+                    ),
+                    AnimatedBuilder(
+                      animation: animation,
+                      builder: (BuildContext context, Widget? child) {
+                        final double t = Curves.easeInOutCubic.transform(
+                          (animation.value + phase) % 1.0,
+                        );
+                        return Align(
+                          // Fractional, so it stays between the two chips at
+                          // any width without a measured offset.
+                          alignment: Alignment(-1 + 2 * t, 0),
+                          child: Opacity(
+                            // Fades in and out at the ends, so it appears to
+                            // leave one device and arrive at the other.
+                            opacity: (1 - (t - 0.5).abs() * 2).clamp(0.25, 1.0),
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          gradient: c.brandGradient,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _DeviceChip(icon: mode.to),
+            ],
           ),
-          child: Icon(icon, size: 32, color: c.primary),
         ),
-        const SizedBox(height: Insets.md),
+        const SizedBox(height: Insets.xs),
         Text(
-          label,
-          style: context.text.bodySmall?.copyWith(color: c.textSecondary),
+          mode.label,
+          style: context.text.labelSmall?.copyWith(color: c.textSecondary),
         ),
       ],
+    );
+  }
+}
+
+/// The hairline the file travels along.
+class _Track extends StatelessWidget {
+  const _Track();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(height: 2, color: context.colors.border);
+  }
+}
+
+class _DeviceChip extends StatelessWidget {
+  const _DeviceChip({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = context.colors;
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        gradient: c.surfaceGradient,
+        borderRadius: BorderRadius.circular(Radii.md),
+        border: Border.all(color: c.border),
+        boxShadow: c.softShadow,
+      ),
+      child: Icon(icon, size: 22, color: c.primary),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app/app.dart';
+import 'core/services/share_intake_service.dart';
 import 'data/local/history_repository.dart';
 import 'core/services/notification_service.dart';
 import 'data/local/preferences_service.dart';
@@ -9,8 +10,13 @@ import 'features/discovery/discovery_controller.dart';
 import 'features/history/history_controller.dart';
 import 'features/settings/settings_controller.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Read before anything else. On Windows a share arrives as the command line
+  // this process was started with, and on Android as the intent that launched
+  // the activity; both are waiting the moment the app exists.
+  ShareIntake.instance.start(arguments);
 
   // Everything stored is read before the first frame, so the app opens straight
   // into the right theme, the right screen, and a populated history.

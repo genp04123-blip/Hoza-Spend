@@ -15,11 +15,13 @@ import '../../shared/widgets/fade_slide_in.dart';
 import '../../shared/widgets/pill_button.dart';
 import '../../shared/widgets/sheen_aura.dart';
 import '../../shared/widgets/hoza_background.dart';
+import '../../shared/widgets/glint_button.dart';
 import '../../shared/widgets/hoza_buttons.dart';
 import '../../shared/widgets/hoza_logo.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/shimmer_text.dart';
 import '../../shared/widgets/status_pill.dart';
+import '../../shared/widgets/transfer_modes.dart';
 import '../connection/connection_controller.dart';
 import '../connection/widgets/connect_sheet.dart';
 import '../connection/widgets/incoming_request_sheet.dart';
@@ -81,8 +83,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final ConnectionController connection =
-        context.read<ConnectionController>();
+    final ConnectionController connection = context
+        .read<ConnectionController>();
     if (!identical(connection, _connection)) {
       _connection?.removeListener(_onConnectionChanged);
       _connection = connection..addListener(_onConnectionChanged);
@@ -166,9 +168,10 @@ class _HomeScreenState extends State<HomeScreen> {
       // every other line on this screen is about finding devices, and none of
       // it means anything until this device is on a network.
       NetworkState.offline => ('Not connected', StatusTone.negative, false),
-      NetworkState.ready => discovery.isSearching
-          ? ('Looking for devices', StatusTone.working, true)
-          : ('Connected to local network', StatusTone.positive, false),
+      NetworkState.ready =>
+        discovery.isSearching
+            ? ('Looking for devices', StatusTone.working, true)
+            : ('Connected to local network', StatusTone.positive, false),
     };
   }
 
@@ -176,10 +179,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final SettingsController settings = context.watch<SettingsController>();
     final DiscoveryController discovery = context.watch<DiscoveryController>();
-    final ConnectionController connection =
-        context.watch<ConnectionController>();
-    final (String status, StatusTone tone, bool pulse) =
-        _networkStatus(discovery);
+    final ConnectionController connection = context
+        .watch<ConnectionController>();
+    final (String status, StatusTone tone, bool pulse) = _networkStatus(
+      discovery,
+    );
 
     return Scaffold(
       body: HozaBackground(
@@ -209,8 +213,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: <Widget>[
                               const Expanded(child: HozaLockup()),
                               IconButton(
-                                onPressed: () => Navigator.of(context)
-                                    .pushNamed(AppRoutes.settings),
+                                onPressed: () => Navigator.of(
+                                  context,
+                                ).pushNamed(AppRoutes.settings),
                                 icon: const Icon(Icons.tune_rounded),
                                 tooltip: 'Settings',
                               ),
@@ -281,8 +286,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: Insets.section),
 
                   _HomeActions(
-                    onSend: () => Navigator.of(context)
-                        .pushNamed(AppRoutes.selection),
+                    onSend: () =>
+                        Navigator.of(context).pushNamed(AppRoutes.selection),
                     onReceive: () =>
                         Navigator.of(context).pushNamed(AppRoutes.receive),
                     onHistory: () =>
@@ -293,6 +298,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   // thing it is for: finding a device and sending to it.
                   const SizedBox(height: Insets.section),
                   const _NetworkShortcuts(),
+                  // Directly above the credit line, because it answers the
+                  // question people ask before they press Send at all: does
+                  // this work between my two phones, or only phone to PC? All
+                  // three pairings work the same way, and none of them is a
+                  // mode the user has to choose.
+                  const FadeSlideIn(index: 3, child: TransferModes()),
+                  const SizedBox(height: Insets.xl),
                   const _HomeFooter(),
                 ],
               ),
@@ -308,10 +320,7 @@ class _HomeScreenState extends State<HomeScreen> {
 ///
 /// The messenger is taken before the await, not the context after it: by the
 /// time the platform answers, the widget that asked may be gone.
-Future<void> _openSetting(
-  BuildContext context,
-  NetworkSetting setting,
-) async {
+Future<void> _openSetting(BuildContext context, NetworkSetting setting) async {
   final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
   if (await NetworkSettingsService.open(setting)) return;
   messenger
@@ -339,8 +348,9 @@ class _BlockedHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors c = context.colors;
-    final bool hasFirewallScreen =
-        NetworkSettingsService.supports(NetworkSetting.firewall);
+    final bool hasFirewallScreen = NetworkSettingsService.supports(
+      NetworkSetting.firewall,
+    );
 
     final String explanation = switch (Platform.operatingSystem) {
       'windows' =>
@@ -426,57 +436,74 @@ class _BlockedHint extends StatelessWidget {
 /// it must not be reachable only from a card that appears when discovery has
 /// already given up.
 ///
-/// Small, and at the very bottom, on purpose. Most of the time the network is
-/// already right and these are answers to a question nobody asked; they should
-/// be there when someone goes looking, without taking attention from Send and
-/// Receive.
+/// Small and on one line, always. Three full-height buttons at the foot of the
+/// page would claim more attention than Send and Receive above them, and a
+/// second row would make the last of the three look like an afterthought - so
+/// they stay chips, and the row scales itself down rather than wrapping when a
+/// narrow phone leaves less room than the three of them want.
+///
+/// Each carries its own colour on its badge, and its own pace and starting
+/// point for the light crossing it, so the three read as three actions rather
+/// than as one effect repeated: blue for Wi-Fi, cyan for Hotspot, and violet -
+/// slowest, and last to be lit - for the fallback that is not part of the pair.
 class _NetworkShortcuts extends StatelessWidget {
   const _NetworkShortcuts();
 
   @override
   Widget build(BuildContext context) {
     final AppColors c = context.colors;
-    final bool hasRadioScreens =
-        NetworkSettingsService.supports(NetworkSetting.wifi);
+    final bool hasRadioScreens = NetworkSettingsService.supports(
+      NetworkSetting.wifi,
+    );
 
     return Padding(
       padding: const EdgeInsets.only(bottom: Insets.xl),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: Insets.sm,
-        runSpacing: Insets.sm,
-        children: <Widget>[
-          // Nothing to offer on iOS or Linux, and a button that does nothing
-          // is worse than no button.
-          if (hasRadioScreens) ...<Widget>[
-            PillButton(
-              icon: Icons.wifi_rounded,
-              label: 'Wi-Fi',
-              tooltip: 'Open Wi-Fi settings',
-              onPressed: () => _openSetting(context, NetworkSetting.wifi),
-            ),
-            PillButton(
-              icon: Icons.wifi_tethering_rounded,
-              label: 'Hotspot',
-              // Cyan against the Wi-Fi pill's brand blue. The two are a pair
-              // and should read as one row, but they are not the same action,
-              // and two identical pills side by side make a user read both
-              // labels to find out which is which.
-              tone: c.accent,
-              tooltip: 'Open hotspot settings',
-              onPressed: () => _openSetting(context, NetworkSetting.hotspot),
+      // Scaled as one row rather than per button, so three pills that have to
+      // shrink shrink together and keep the same text size as each other.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            // Nothing to offer on iOS or Linux, and a button that does nothing
+            // is worse than no button.
+            if (hasRadioScreens) ...<Widget>[
+              GlintButton(
+                icon: Icons.wifi_rounded,
+                label: 'Wi-Fi',
+                tooltip: 'Open Wi-Fi settings',
+                onPressed: () => _openSetting(context, NetworkSetting.wifi),
+              ),
+              const SizedBox(width: Insets.sm),
+              GlintButton(
+                icon: Icons.wifi_tethering_rounded,
+                label: 'Hotspot',
+                // Cyan against the Wi-Fi chip's brand blue. The two are a pair
+                // and should read as one row, but they are not the same
+                // action, and two identical chips side by side make a user
+                // read both labels to find out which is which.
+                tone: c.accent,
+                tooltip: 'Open hotspot settings',
+                period: const Duration(milliseconds: 4400),
+                phase: 0.34,
+                onPressed: () => _openSetting(context, NetworkSetting.hotspot),
+              ),
+              const SizedBox(width: Insets.sm),
+            ],
+            GlintButton(
+              icon: Icons.dns_rounded,
+              label: 'Connect by IP',
+              // Violet, and the slowest of the three. This is the fallback: it
+              // should be as findable as the other two and still not read as
+              // the first thing to try.
+              tone: HozaViolet.mid(Theme.of(context).brightness),
+              tooltip: 'Connect to a device by typing its address',
+              period: const Duration(milliseconds: 6400),
+              phase: 0.67,
+              onPressed: () => showManualConnectSheet(context),
             ),
           ],
-          PillButton(
-            icon: Icons.dns_rounded,
-            label: 'Connect by IP',
-            // Quieter than the two beside it: this is the fallback, and it
-            // should not read as the first thing to try.
-            tone: c.textSecondary,
-            tooltip: 'Connect to a device by typing its address',
-            onPressed: () => showManualConnectSheet(context),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -492,8 +519,9 @@ class _HomeFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors c = context.colors;
-    final TextStyle? style =
-        context.text.labelSmall?.copyWith(color: c.textTertiary);
+    final TextStyle? style = context.text.labelSmall?.copyWith(
+      color: c.textTertiary,
+    );
 
     return Column(
       children: <Widget>[
@@ -505,11 +533,7 @@ class _HomeFooter extends StatelessWidget {
           style: style?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: Insets.xs),
-        Text(
-          AppConstants.copyright,
-          textAlign: TextAlign.center,
-          style: style,
-        ),
+        Text(AppConstants.copyright, textAlign: TextAlign.center, style: style),
       ],
     );
   }

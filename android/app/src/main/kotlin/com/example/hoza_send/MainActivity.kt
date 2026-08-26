@@ -2,6 +2,7 @@ package com.example.hoza_send
 
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -10,6 +11,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -17,6 +19,8 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * The two things HozaSend needs from Android that Dart cannot reach.
@@ -30,6 +34,12 @@ class MainActivity : FlutterActivity() {
 
     private var multicastLock: WifiManager.MulticastLock? = null
     private var linkLock: WifiManager.WifiLock? = null
+
+    /** Kept so a share arriving later can be pushed to Dart. */
+    private var shareChannel: MethodChannel? = null
+
+    /** One thread, because copying a share is IO and order does not matter. */
+    private val shareWorker: ExecutorService = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -115,6 +125,36 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        shareChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SHARE_CHANNEL,
+        ).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // Pulled rather than pushed: the share that launched the
+                    // app has been sitting in the intent since before Dart
+                    // existed, so the app asks for it once it is listening.
+                    "consume" -> takeShared { paths -> result.success(paths) }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+    }
+
+    /**
+     * A share that arrives while HozaSend is already open.
+     *
+     * `singleTop` in the manifest is what routes it here rather than starting
+     * a second copy of the app - which would be a second copy fighting for the
+     * same two ports.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        takeShared { paths ->
+            if (paths.isNotEmpty()) shareChannel?.invokeMethod("shared", paths)
+        }
     }
 
     // --- Session lifetime ----------------------------------------------------
@@ -150,6 +190,147 @@ class MainActivity : FlutterActivity() {
             )
         } catch (error: Exception) {
             // Already gone, or the process is being torn down anyway.
+        }
+    }
+
+    // --- Sharing in ----------------------------------------------------------
+
+    /**
+     * Hands whatever another app shared to [deliver], as paths this app can
+     * read, on the main thread.
+     *
+     * The intent is cleared once taken. Android keeps handing the same intent
+     * back for the life of the activity, so without this a rotation - or the
+     * user simply coming back to the app later - would queue the same files
+     * again.
+     */
+    private fun takeShared(deliver: (List<String>) -> Unit) {
+        val uris = sharedUris(intent)
+        if (uris.isEmpty()) {
+            deliver(emptyList())
+            return
+        }
+        setIntent(Intent(Intent.ACTION_MAIN))
+        // Off the main thread: a share can be a 2 GB video, and copying it
+        // where the frames are drawn is how an app gets killed for not
+        // responding.
+        shareWorker.execute {
+            val paths = materialize(uris)
+            runOnUiThread { deliver(paths) }
+        }
+    }
+
+    /** What was actually shared, whichever way the other app sent it. */
+    @Suppress("DEPRECATION")
+    private fun sharedUris(source: Intent?): List<Uri> {
+        if (source == null) return emptyList()
+        return when (source.action) {
+            Intent.ACTION_SEND ->
+                listOfNotNull(source.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
+            Intent.ACTION_SEND_MULTIPLE ->
+                source.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                    ?: emptyList()
+            // "Open with HozaSend" on a file, which is the same request said a
+            // different way.
+            Intent.ACTION_VIEW -> listOfNotNull(source.data)
+            else -> emptyList()
+        }
+    }
+
+    /**
+     * Copies each shared item into this app's cache and returns the paths.
+     *
+     * A share arrives as a content URI, not a file: there is no path to open,
+     * and the permission that came with it dies with the activity. Copying is
+     * what turns it into something the transfer engine can stream at any point
+     * afterwards - the same trade the file picker already makes on Android.
+     *
+     * A `file://` share needs none of that and is passed straight through.
+     */
+    private fun materialize(uris: List<Uri>): List<String> {
+        val directory = File(cacheDir, SHARED_DIR)
+        if (!directory.exists() && !directory.mkdirs()) return emptyList()
+        purge(directory)
+
+        val paths = ArrayList<String>(uris.size)
+        for (uri in uris) {
+            try {
+                if (uri.scheme == "file") {
+                    val path = uri.path
+                    if (path != null && File(path).canRead()) {
+                        paths.add(path)
+                        continue
+                    }
+                }
+                val target = unique(File(directory, displayName(uri)))
+                val copied = contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { output ->
+                        input.copyTo(output, BUFFER)
+                    }
+                    true
+                } ?: false
+                if (copied) paths.add(target.absolutePath)
+            } catch (error: Exception) {
+                // One item the sender could not actually give us must not lose
+                // the rest of the share.
+            }
+        }
+        return paths
+    }
+
+    /** The name the other app shows for this item, or something usable. */
+    private fun displayName(uri: Uri): String {
+        if (uri.scheme == ContentResolver.SCHEME_CONTENT) {
+            try {
+                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (column >= 0 && cursor.moveToFirst()) {
+                        val name = cursor.getString(column)
+                        if (!name.isNullOrBlank()) return sanitize(name)
+                    }
+                }
+            } catch (error: Exception) {
+                // Providers are allowed to refuse this; the fallback is fine.
+            }
+        }
+        return sanitize(uri.lastPathSegment ?: "shared")
+    }
+
+    /** A URI segment is not a file name; anything path-like is stripped. */
+    private fun sanitize(name: String): String {
+        val cleaned = name.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("""[\\/:*?"<>|]"""), "_")
+            .trim()
+        return if (cleaned.isEmpty()) "shared" else cleaned.take(120)
+    }
+
+    /** Never overwrites: two shares of report.pdf are two files. */
+    private fun unique(candidate: File): File {
+        if (!candidate.exists()) return candidate
+        val stem = candidate.name.substringBeforeLast('.', candidate.name)
+        val extension = candidate.name.substringAfterLast('.', "")
+        var counter = 1
+        while (true) {
+            val name =
+                if (extension.isEmpty()) "$stem ($counter)"
+                else "$stem ($counter).$extension"
+            val next = File(candidate.parentFile, name)
+            if (!next.exists()) return next
+            counter++
+        }
+    }
+
+    /**
+     * Drops copies from earlier shares.
+     *
+     * These are working copies of files the user already has, and the only
+     * thing that would ever notice them missing is a transfer still running -
+     * hence a day, rather than clearing the folder on every share.
+     */
+    private fun purge(directory: File) {
+        val cutoff = System.currentTimeMillis() - SHARE_CACHE_MS
+        directory.listFiles()?.forEach { file ->
+            if (file.isFile && file.lastModified() < cutoff) file.delete()
         }
     }
 
@@ -260,6 +441,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        shareWorker.shutdown()
         // The radio must not be left awake if the activity goes away while
         // discovery or a transfer is still running.
         releaseLock()
@@ -462,7 +644,14 @@ class MainActivity : FlutterActivity() {
         private const val STORAGE_CHANNEL = "hozasend/storage"
         private const val SETTINGS_CHANNEL = "hozasend/system_settings"
         private const val SESSION_CHANNEL = "hozasend/session"
+        private const val SHARE_CHANNEL = "hozasend/share"
         private const val SETTINGS_PACKAGE = "com.android.settings"
+
+        /** Working copies of shared files, inside the app own cache. */
+        private const val SHARED_DIR = "shared"
+
+        /** How long a working copy is kept before it is cleared. */
+        private const val SHARE_CACHE_MS = 24L * 60 * 60 * 1000
 
         /** Hidden in the SDK, so it has to be written out. */
         private const val TETHER_ACTION = "android.settings.TETHER_SETTINGS"
