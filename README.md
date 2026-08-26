@@ -24,14 +24,14 @@ upload it to.
 <tr>
 <td width="62%" valign="top">
 
-**Windows**
+**Windows & Mac os**
 
 <img src="docs/screenshots/windows-home.png" alt="HozaSend on Windows, showing a discovered Android device">
 
 </td>
 <td width="38%" valign="top">
 
-**Android**
+**Android & ios**
 
 <img src="docs/screenshots/android-home.png" alt="HozaSend on Android, searching for nearby devices">
 
