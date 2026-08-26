@@ -33,6 +33,20 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Gradle build output. The root /build/ rule above only matches the root, so
+# the Android module's own build directory needs saying separately.
+/android/app/build/
+/android/build/
+
+# Build logs and other output captured while debugging a build. Never part of
+# the app; the *.log rule above misses these because they are named .txt.
+*-build-log.txt
+*build.log
+/logs/
+
+# Tests. Kept locally, not carried in the repo.
+/test/
+
 # Symbolication related
 app.*.symbols
 
