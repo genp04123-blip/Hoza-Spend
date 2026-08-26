@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -74,7 +74,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -88,11 +88,19 @@ jobs:
       - name: Build macOS
         run: flutter build macos --release
 
+      # upload-artifact rebuilds the .app from a plain file list, which drops
+      # the executable bit and flattens the framework symlinks - the downloaded
+      # bundle then refuses to launch. ditto preserves both inside a zip.
+      - name: Package macOS app
+        run: |
+          APP=$(ls -d build/macos/Build/Products/Release/*.app | head -1)
+          ditto -c -k --sequesterRsrc --keepParent "$APP" build/HozaSend-macos.zip
+
       - name: Upload macOS
         uses: actions/upload-artifact@v4
         with:
           name: macos-release
-          path: build/macos/Build/Products/Release/
+          path: build/HozaSend-macos.zip
 
 
   ios:
@@ -101,7 +109,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -114,3 +122,19 @@ jobs:
 
       - name: Build iOS
         run: flutter build ios --release --no-codesign
+
+      # An unsigned build has no .ipa of its own, so the .app is wrapped in the
+      # Payload/ layout by hand. It still needs signing before it will install
+      # on a device.
+      - name: Package unsigned IPA
+        run: |
+          APP=$(ls -d build/ios/iphoneos/*.app | head -1)
+          mkdir -p build/ios/Payload
+          cp -R "$APP" build/ios/Payload/
+          cd build/ios && zip -qry HozaSend-ios-unsigned.ipa Payload
+
+      - name: Upload iOS
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release
+          path: build/ios/HozaSend-ios-unsigned.ipa

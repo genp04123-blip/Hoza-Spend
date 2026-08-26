@@ -28,7 +28,7 @@ class AppDelegate: FlutterAppDelegate {
       return
     }
 
-    MethodChannel(
+    FlutterMethodChannel(
       name: "hozasend/storage",
       binaryMessenger: controller.engine.binaryMessenger
     ).setMethodCallHandler { call, result in
