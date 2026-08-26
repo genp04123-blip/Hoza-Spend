@@ -121,12 +121,17 @@ devices will not find each other until either:
 Everything else on iOS — pairing, transfer, verification, history — is the
 same code that runs everywhere else and needs nothing new.
 
-**What is missing is a build.** macOS apps can only be compiled on a Mac with
-Xcode, and this has not been run on one yet, so nothing here is claimed as
-tested. A release will follow once it has been. If you have a Mac:
+### Both Apple platforms: what is missing is a build
+
+A macOS `.app` and an iOS `.ipa` can only be compiled on a Mac with Xcode, and
+neither has been. Nothing above is claimed as tested — the Dart analyses clean
+and the Swift has never met a compiler. Releases follow once they have.
+
+If you have a Mac:
 
 ```bash
 flutter run -d macos
+flutter run -d <your-iphone>
 ```
 
 Issues and reports from that are very welcome.
