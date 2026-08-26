@@ -92,6 +92,10 @@ class MainActivity : FlutterActivity() {
                                 openFile(target, call.argument<String>("mimeType")),
                         )
                     }
+                    "deleteFile" -> {
+                        val target = call.argument<String>("target")
+                        result.success(target != null && deleteReceivedFile(target))
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -548,6 +552,43 @@ class MainActivity : FlutterActivity() {
             startActivity(chooser)
             true
         } catch (error: ActivityNotFoundException) {
+            false
+        }
+    }
+
+    /**
+     * Removes a received file from Downloads/HozaSend.
+     *
+     * [target] is the MediaStore URI the file was published as under scoped
+     * storage, or a plain path on older phones. Either way it is a file this
+     * app wrote, which is the one kind an app may delete without asking:
+     * MediaStore lets the owner of a row remove it. A file that is already
+     * gone counts as deleted - the point is the end state, not the act.
+     */
+    private fun deleteReceivedFile(target: String): Boolean {
+        if (!target.startsWith("content://")) {
+            val file = File(target)
+            if (!file.exists()) return true
+            return try {
+                file.delete()
+            } catch (error: SecurityException) {
+                false
+            }
+        }
+
+        val uri = Uri.parse(target)
+        val resolver = applicationContext.contentResolver
+        return try {
+            if (resolver.delete(uri, null, null) > 0) return true
+            // Zero rows: the entry is already gone. Confirm rather than assume,
+            // since zero is also what a row the app no longer owns returns.
+            resolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+                ?.use { cursor -> cursor.count == 0 } ?: true
+        } catch (error: SecurityException) {
+            // Published by an earlier install of the app, so the ownership
+            // that would have allowed this was lost with it.
+            false
+        } catch (error: Exception) {
             false
         }
     }

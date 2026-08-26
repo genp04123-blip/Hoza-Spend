@@ -19,9 +19,13 @@ import '../../transfer/widgets/received_file_row.dart';
 /// over - the folder only tells them what is on disk now, not what arrived
 /// together.
 class HistoryTile extends StatefulWidget {
-  const HistoryTile({super.key, required this.record});
+  const HistoryTile({super.key, required this.record, this.onDelete});
 
   final TransferRecord record;
+
+  /// Asked to take this entry away - and, for a received transfer, the files
+  /// it left on this device. Null hides the button.
+  final VoidCallback? onDelete;
 
   @override
   State<HistoryTile> createState() => _HistoryTileState();
@@ -117,6 +121,20 @@ class _HistoryTileState extends State<HistoryTile> {
               ),
               const SizedBox(width: Insets.sm),
               StatusPill(label: label, tone: tone),
+              // Right on the row rather than hidden in the opened half: the
+              // one thing a person comes to a log line to do, besides read it,
+              // is get rid of it. Danger-toned so it is never mistaken for
+              // the arrow beside it.
+              if (widget.onDelete case final VoidCallback onDelete) ...<Widget>[
+                const SizedBox(width: Insets.sm),
+                PillButton(
+                  icon: Icons.delete_outline_rounded,
+                  tone: c.danger,
+                  tooltip: 'Delete',
+                  onPressed: onDelete,
+                ),
+              ],
+              const SizedBox(width: Insets.xs),
               // Turns over as the row opens, so the arrow is the state rather
               // than a decoration that happens to point somewhere.
               AnimatedRotation(

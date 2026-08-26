@@ -33,6 +33,19 @@ class HistoryController extends ChangeNotifier {
     await _repository.save(_records);
   }
 
+  /// Drops one entry. The files it named are the caller's business: history
+  /// is a log, and the log does not know whether the user also wants the
+  /// bytes gone.
+  Future<void> remove(String id) async {
+    final List<TransferRecord> kept = _records
+        .where((TransferRecord record) => record.id != id)
+        .toList(growable: false);
+    if (kept.length == _records.length) return;
+    _records = List<TransferRecord>.unmodifiable(kept);
+    notifyListeners();
+    await _repository.save(_records);
+  }
+
   Future<void> clear() async {
     if (_records.isEmpty) return;
     _records = const <TransferRecord>[];
