@@ -51,6 +51,13 @@ class TransferSender {
   bool _cancelled = false;
   HozaError? _failure;
 
+  /// Why the transfer is stopping, at the points that only know *that* it is.
+  ///
+  /// A bare "Cancelled." is the right answer when this user pressed the
+  /// button, and the wrong one when the other device ran out of space - the
+  /// reason has already been recorded by then, so it is used in preference.
+  HozaError get _abort => _failure ?? HozaError.cancelled;
+
   /// Runs the whole transfer. Completes normally on success, or throws a
   /// [HozaError] already phrased for the user.
   Future<void> run() async {
@@ -60,7 +67,7 @@ class TransferSender {
       _tracker.start();
 
       for (final TransferFile file in _files) {
-        if (_cancelled) throw HozaError.cancelled;
+        if (_cancelled) throw _abort;
         await _sendFile(file);
         _tracker.completeFile();
       }
@@ -153,7 +160,7 @@ class TransferSender {
       digestIn.close();
     }
 
-    if (_cancelled) throw HozaError.cancelled;
+    if (_cancelled) throw _abort;
     _session.send(
       ControlMessage.fileDone(file.id, hex.encode(digestOut.events.single.bytes)),
     );
@@ -173,7 +180,7 @@ class TransferSender {
   ) async* {
     int sent = 0;
     await for (final List<int> chunk in source) {
-      if (_cancelled) throw HozaError.cancelled;
+      if (_cancelled) throw _abort;
       if (sent >= size) break;
       final int take = math.min(chunk.length, size - sent);
       final List<int> slice =
@@ -219,15 +226,24 @@ class TransferSender {
         _finishResult(_failure);
 
       case ControlType.result:
-        _finishResult(
-          message.isOk
-              ? null
-              : HozaError(
-                  HozaErrorKind.unknown,
-                  "The other device couldn't save the files.\nTry again.",
-                  detail: message.reason,
-                ),
+        if (message.isOk) {
+          _finishResult(null);
+          return;
+        }
+        final HozaError failure = HozaError(
+          HozaErrorKind.unknown,
+          "The other device couldn't save the files.\nTry again.",
+          detail: message.reason,
         );
+        // A failure can arrive long before the end of the transfer - a full
+        // disk, or a checksum that did not match on the first of five files -
+        // and at that point the receiver has stopped writing. Without this the
+        // sender would stream every remaining byte into a peer that is only
+        // throwing them away, and only notice once it asked for a result.
+        _cancelled = true;
+        _failure = failure;
+        _failOffer(failure);
+        _finishResult(failure);
 
       default:
         break;

@@ -14,7 +14,9 @@ class HozaTextField extends StatelessWidget {
     this.autofocus = false,
     this.textInputAction = TextInputAction.done,
     this.onSubmitted,
+    this.onChanged,
     this.prefixIcon,
+    this.keyboardType,
   });
 
   final TextEditingController controller;
@@ -23,7 +25,12 @@ class HozaTextField extends StatelessWidget {
   final bool autofocus;
   final TextInputAction textInputAction;
   final ValueChanged<String>? onSubmitted;
+  final ValueChanged<String>? onChanged;
   final IconData? prefixIcon;
+
+  /// Worth setting for an address or a code, where the letter keys are dead
+  /// weight and the digits are two taps away without it.
+  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +39,8 @@ class HozaTextField extends StatelessWidget {
       autofocus: autofocus,
       textInputAction: textInputAction,
       onSubmitted: onSubmitted,
+      onChanged: onChanged,
+      keyboardType: keyboardType,
       style: context.text.bodyLarge,
       cursorColor: context.colors.primary,
       // Hard-capped rather than validated after the fact, so the user cannot

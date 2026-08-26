@@ -42,6 +42,11 @@ dependencies:
   file_picker: ^12.1.0
   crypto: ^3.0.7
   convert: ^3.1.2
+  # Only for reading interface netmasks, which dart:io does not expose and
+  # every operating system will happily tell us. No native code of our own -
+  # this is the allocator and string helpers for calling getifaddrs on POSIX
+  # and GetIpAddrTable on Windows. See network/discovery/interface_table.dart.
+  ffi: ^2.1.4
   flutter_local_notifications: ^22.3.0
   desktop_drop: ^0.8.1
   cross_file: ^0.3.5+5

@@ -249,7 +249,34 @@ class TransferController extends ChangeNotifier {
     if (_status == TransferStatus.awaitingApproval) {
       _status = TransferStatus.inProgress;
     }
+    _publishSessionProgress();
     notifyListeners();
+  }
+
+  /// Mirrors the transfer onto the Android session notification.
+  ///
+  /// The whole point of that notification is the user who is *not* looking at
+  /// this screen - they switched away, and it is what keeps the process alive
+  /// while they are gone. A bar that never moves would make it look stuck.
+  ///
+  /// Costs nothing off Android, and nothing on it either unless the whole
+  /// percent has changed: [ForegroundService] drops a repeat of what is
+  /// already showing, and progress arrives many times a second.
+  void _publishSessionProgress() {
+    if (!isActive) {
+      _connection.updateSessionProgress();
+      return;
+    }
+    final int total = _progress.totalBytes;
+    final int? percent = total <= 0
+        ? null
+        : ((_progress.bytesTransferred * 100) ~/ total).clamp(0, 100);
+    _connection.updateSessionProgress(
+      text: isSending
+          ? 'Sending ${_files.length == 1 ? _files.first.name : '${_files.length} files'}'
+          : 'Receiving ${_files.length == 1 ? _files.first.name : '${_files.length} files'}',
+      percent: percent,
+    );
   }
 
   void _onReceiveStarted(String transferId, List<TransferFile> files) {
@@ -297,6 +324,10 @@ class TransferController extends ChangeNotifier {
   /// background, posts a notice. Neither is awaited: both are conveniences and
   /// must never hold up the result the user is waiting to see.
   void _record() {
+    // The one place both directions pass through when they stop, so it is
+    // where the session notification goes back to saying nothing is moving.
+    _publishSessionProgress();
+
     final TransferDirection? direction = _direction;
     if (direction == null || _files.isEmpty) return;
 

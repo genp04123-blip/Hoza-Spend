@@ -1,11 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/hoza_error.dart';
 import '../../core/models/hoza_device.dart';
 import '../../core/services/device_identity.dart';
+import '../../core/services/foreground_service.dart';
+import '../../core/services/wifi_lock_service.dart';
 import '../../core/utils/log.dart';
 import '../../network/connection/connection_client.dart';
 import '../../network/connection/connection_server.dart';
@@ -39,13 +41,18 @@ enum SessionState {
 ///
 /// Runs the server that answers other devices, and drives the client side when
 /// this user picks someone to connect to.
-class ConnectionController extends ChangeNotifier {
+class ConnectionController extends ChangeNotifier with WidgetsBindingObserver {
   ConnectionController(this._settings) {
     _server = ConnectionServer(
       selfDevice: _selfDevice,
-      isBusy: () => _session != null,
+      // The whole in-progress range, not just a bound session. A device that
+      // is dialling out, or waiting on the other user's Accept, has already
+      // committed to one conversation; letting a second one in produces two
+      // half-built sessions and a user watching a spinner that never resolves.
+      isBusy: () => _state.isBusy || _session != null,
     );
     _requestSub = _server.requests.listen(_onIncoming);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   /// How long to wait for the other user to answer before giving up. Slightly
@@ -67,6 +74,7 @@ class ConnectionController extends ChangeNotifier {
   HozaError? _error;
   IncomingRequest? _incoming;
   String? _serverError;
+  bool _linkHeld = false;
 
   SessionState get state => _state;
 
@@ -101,6 +109,16 @@ class ConnectionController extends ChangeNotifier {
           'using the port, or a firewall is blocking it.';
     }
     notifyListeners();
+  }
+
+  /// Binding the port can fail at launch for reasons that clear on their own -
+  /// Wi-Fi not up yet, or the port still held by a previous run that Android
+  /// has not finished killing. Coming back to the app is the natural moment to
+  /// try again, and it costs one call.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (!_server.isRunning) unawaited(start());
   }
 
   /// Connects to a device the user picked from the nearby list.
@@ -148,6 +166,7 @@ class ConnectionController extends ChangeNotifier {
   /// Ends the session, whether it is connected or still being set up.
   void disconnect() {
     _approvalTimer?.cancel();
+    _releaseLink();
     final HozaSession? session = _session;
     _session = null;
     unawaited(session?.close());
@@ -163,7 +182,9 @@ class ConnectionController extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _approvalTimer?.cancel();
+    _releaseLink();
     _messageSub?.cancel();
     _requestSub.cancel();
     unawaited(_session?.close());
@@ -176,6 +197,67 @@ class ConnectionController extends ChangeNotifier {
     _messageSub?.cancel();
     _messageSub = session.messages.listen(_onMessage);
     session.closed.then(_onSessionClosed);
+    _holdLink();
+  }
+
+  /// Keeps the Wi-Fi radio at full power - and the process itself running -
+  /// while a session exists.
+  ///
+  /// Three separate things, each covering a different way a transfer dies when
+  /// the user is not looking at it. The multicast lock discovery holds stops
+  /// broadcast packets being filtered, and does nothing for throughput. The
+  /// link lock keeps the radio out of its power-saving duty cycle, without
+  /// which a long transfer with the screen off is throttled to a crawl and
+  /// eventually trips the liveness timeout. And the foreground service keeps
+  /// Android from freezing the process outright a few minutes after the app
+  /// leaves the screen, which no amount of radio wakefulness helps with.
+  void _holdLink() {
+    if (_linkHeld) return;
+    _linkHeld = true;
+    unawaited(WifiLockService.acquireLink());
+    _showSessionNotice();
+  }
+
+  void _releaseLink() {
+    if (!_linkHeld) return;
+    _linkHeld = false;
+    unawaited(WifiLockService.releaseLink());
+    unawaited(ForegroundService.hide());
+  }
+
+  /// The line the session notification carries while nothing is moving.
+  ///
+  /// Replaced by [updateSessionProgress] as soon as a transfer starts, and
+  /// restored by it when one finishes: the notification lives for the whole
+  /// session, not just the transfer inside it.
+  void _showSessionNotice() {
+    if (!_linkHeld) return;
+    final String? name = _peer?.name;
+    unawaited(
+      ForegroundService.show(
+        title: name == null ? 'HozaSend session' : 'Connected to $name',
+        text: 'Keeping the connection open.',
+      ),
+    );
+  }
+
+  /// Lets the transfer layer put what is actually happening on the
+  /// notification, without it needing to know anything about locks or
+  /// services. Passing null puts the idle line back.
+  void updateSessionProgress({String? text, int? percent}) {
+    if (!_linkHeld) return;
+    if (text == null) {
+      _showSessionNotice();
+      return;
+    }
+    final String? name = _peer?.name;
+    unawaited(
+      ForegroundService.show(
+        title: name == null ? 'HozaSend session' : 'Connected to $name',
+        text: text,
+        progress: percent,
+      ),
+    );
   }
 
   void _onMessage(ControlMessage message) {
@@ -189,6 +271,9 @@ class ConnectionController extends ChangeNotifier {
         if (device != null) {
           session.remote = device;
           _peer = device;
+          // The notification went up before the name was known, addressed to
+          // nobody in particular. Now it can say who.
+          _showSessionNotice();
           notifyListeners();
         }
 
@@ -196,6 +281,7 @@ class ConnectionController extends ChangeNotifier {
         _approvalTimer?.cancel();
         _state = SessionState.connected;
         _peer = session.remote;
+        _showSessionNotice();
         Log.info('Connection', 'Connected to ${session.remote.name}');
         notifyListeners();
 
@@ -243,6 +329,8 @@ class ConnectionController extends ChangeNotifier {
     _code = request.code;
     _error = null;
     _state = SessionState.connected;
+    // After _peer, so the notification can name the device that connected.
+    _showSessionNotice();
     notifyListeners();
   }
 
@@ -251,6 +339,7 @@ class ConnectionController extends ChangeNotifier {
     _messageSub = null;
     _session = null;
     _approvalTimer?.cancel();
+    _releaseLink();
 
     // A close during rejected or failed is expected - the state is already
     // right and overwriting it would lose the reason the user needs to see.
@@ -267,6 +356,7 @@ class ConnectionController extends ChangeNotifier {
 
   void _fail(HozaError error) {
     _approvalTimer?.cancel();
+    _releaseLink();
     _error = error;
     _state = SessionState.failed;
     final HozaSession? session = _session;

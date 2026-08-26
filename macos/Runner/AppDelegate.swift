@@ -59,6 +59,52 @@ class AppDelegate: FlutterAppDelegate {
       }
     }
 
+    FlutterMethodChannel(
+      name: "hozasend/system_settings",
+      binaryMessenger: controller.engine.binaryMessenger
+    ).setMethodCallHandler { call, result in
+      switch call.method {
+      case "openWifi":
+        result(AppDelegate.openFirst([
+          // Ventura and later, then the pane name every earlier version used.
+          "x-apple.systempreferences:com.apple.Network-Settings.extension",
+          "x-apple.systempreferences:com.apple.preference.network",
+        ]))
+
+      case "openHotspot":
+        // macOS calls it Internet Sharing, and it lives in Sharing rather than
+        // in Network.
+        result(AppDelegate.openFirst([
+          "x-apple.systempreferences:com.apple.Sharing-Settings.extension",
+          "x-apple.systempreferences:com.apple.preferences.sharing",
+        ]))
+
+      case "openFirewall":
+        // Ventura moved the firewall out of Security & Privacy and into
+        // Network; the older identifier is kept for everything before that.
+        result(AppDelegate.openFirst([
+          "x-apple.systempreferences:com.apple.Network-Settings.extension?Firewall",
+          "x-apple.systempreferences:com.apple.preference.security?Firewall",
+        ]))
+
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     super.applicationDidFinishLaunching(notification)
+  }
+
+  /// Opens the first of [candidates] this version of macOS recognises.
+  ///
+  /// Through NSWorkspace for the same reason opening a file is: a sandboxed
+  /// process cannot drive LaunchServices with `open`, and the pane identifiers
+  /// were renamed in Ventura, so more than one has to be tried.
+  private static func openFirst(_ candidates: [String]) -> Bool {
+    for candidate in candidates {
+      guard let url = URL(string: candidate) else { continue }
+      if NSWorkspace.shared.open(url) { return true }
+    }
+    return false
   }
 }

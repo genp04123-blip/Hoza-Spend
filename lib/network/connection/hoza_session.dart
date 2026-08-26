@@ -146,6 +146,11 @@ class HozaSession {
   void resumeInput() {
     if (!_inputPaused || _disposed) return;
     _inputPaused = false;
+    // The liveness clock restarts here rather than carrying the length of the
+    // pause into it. Nothing arrived while reading was stopped because nothing
+    // was being read, and the first heartbeat after a long disk write must not
+    // read that silence as a dead peer.
+    _lastInbound = DateTime.now();
     _subscription?.resume();
   }
 
@@ -186,7 +191,14 @@ class HozaSession {
   }
 
   void _onHeartbeat() {
-    if (DateTime.now().difference(_lastInbound) > _livenessTimeout) {
+    // Silence while input is paused says nothing about the peer: this side
+    // stopped listening on purpose. Verifying a large received file - flushing
+    // it, hashing it, and on Android copying it into Downloads - happens with
+    // reading paused and can take well over the liveness window on a multi-
+    // gigabyte file. Declaring the connection dead there would fail a transfer
+    // that had already arrived in full.
+    if (!_inputPaused &&
+        DateTime.now().difference(_lastInbound) > _livenessTimeout) {
       Log.warn(_tag, 'No response from ${remote.name}; connection lost');
       _finish(HozaError.lost);
       return;

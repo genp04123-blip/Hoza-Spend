@@ -124,9 +124,13 @@ class NearbyDevices extends StatelessWidget {
   ) {
     // Matched on address as well as id: a session this device accepted was
     // built from the socket, and its id need not be the one the beacon
-    // advertised.
+    // advertised. Every address the device is known at counts, because a
+    // phone on two networks answers discovery on one and the connection on
+    // the other, and matching only the listed address would leave the live
+    // link looking like an idle row.
     final bool live = peer != null &&
-        (peer.id == device.id || peer.address == device.address);
+        (peer.id == device.id ||
+            device.candidateAddresses.contains(peer.address));
     if (!live) return DeviceTile(device: device, onTap: () => onSelect(device));
 
     return DeviceTile(

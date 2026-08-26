@@ -47,6 +47,7 @@ class HozaDevice {
     required this.appVersion,
     required this.lastSeen,
     this.status = DeviceStatus.available,
+    this.alternateAddresses = const <String>[],
   });
 
   /// Stable per-installation id. Survives renames, so one device is not listed
@@ -68,6 +69,22 @@ class HozaDevice {
   final DateTime lastSeen;
 
   final DeviceStatus status;
+
+  /// Other addresses this same device has answered from, most recent first.
+  ///
+  /// A device can hold several at once - a laptop on Ethernet and Wi-Fi, a
+  /// phone joined to Wi-Fi while running a hotspot - and only some of them
+  /// are reachable from here. Discovery picks the best one for [address] and
+  /// keeps the rest, so a connection that fails on the first has somewhere
+  /// else to go instead of failing outright.
+  final List<String> alternateAddresses;
+
+  /// Every address worth trying, best first and without duplicates.
+  List<String> get candidateAddresses => <String>[
+        address,
+        for (final String other in alternateAddresses)
+          if (other != address) other,
+      ];
 
   /// Beacon payload. Deliberately small; it goes out every two seconds.
   Map<String, Object?> toBeacon() => <String, Object?>{
@@ -108,6 +125,7 @@ class HozaDevice {
     int? port,
     DateTime? lastSeen,
     DeviceStatus? status,
+    List<String>? alternateAddresses,
   }) {
     return HozaDevice(
       id: id,
@@ -118,6 +136,7 @@ class HozaDevice {
       appVersion: appVersion,
       lastSeen: lastSeen ?? this.lastSeen,
       status: status ?? this.status,
+      alternateAddresses: alternateAddresses ?? this.alternateAddresses,
     );
   }
 

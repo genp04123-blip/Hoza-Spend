@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,7 +10,9 @@ import '../../app/theme/app_tokens.dart';
 import '../../app/theme/violet.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/models/hoza_device.dart';
+import '../../core/services/network_settings_service.dart';
 import '../../shared/widgets/fade_slide_in.dart';
+import '../../shared/widgets/pill_button.dart';
 import '../../shared/widgets/sheen_aura.dart';
 import '../../shared/widgets/hoza_background.dart';
 import '../../shared/widgets/hoza_buttons.dart';
@@ -19,6 +23,7 @@ import '../../shared/widgets/status_pill.dart';
 import '../connection/connection_controller.dart';
 import '../connection/widgets/connect_sheet.dart';
 import '../connection/widgets/incoming_request_sheet.dart';
+import '../connection/widgets/manual_connect_sheet.dart';
 import '../discovery/discovery_controller.dart';
 import '../discovery/widgets/nearby_devices.dart';
 import '../onboarding/widgets/folder_setup_sheet.dart';
@@ -266,6 +271,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     onSelect: (HozaDevice device) =>
                         showConnectSheet(context, device),
                   ),
+                  // Only once discovery has genuinely run out of things to
+                  // try. Before that an empty list means "not yet", and this
+                  // card would be answering a question nobody has asked.
+                  if (discovery.seemsBlocked) ...<Widget>[
+                    const SizedBox(height: Insets.lg),
+                    const _BlockedHint(),
+                  ],
                   const SizedBox(height: Insets.section),
 
                   _HomeActions(
@@ -280,12 +292,191 @@ class _HomeScreenState extends State<HomeScreen> {
                   // the History button above, which keeps home about the one
                   // thing it is for: finding a device and sending to it.
                   const SizedBox(height: Insets.section),
+                  const _NetworkShortcuts(),
                   const _HomeFooter(),
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Opens a system network screen, and says so if it could not.
+///
+/// The messenger is taken before the await, not the context after it: by the
+/// time the platform answers, the widget that asked may be gone.
+Future<void> _openSetting(
+  BuildContext context,
+  NetworkSetting setting,
+) async {
+  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+  if (await NetworkSettingsService.open(setting)) return;
+  messenger
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(content: Text("Couldn't open ${setting.label} settings.")),
+    );
+}
+
+/// Shown when discovery has tried everything and found nobody.
+///
+/// The honest reading of that state is not "there are no devices here" - it is
+/// "this network is not letting them see each other", and that has a small
+/// number of causes, each with something the user can actually do. Naming the
+/// likely one for this platform beats a generic apology: on Windows it is
+/// nearly always the firewall prompt that got dismissed on first run, and on a
+/// phone it is nearly always an access point that isolates its clients, which
+/// no setting on the device can undo but a hotspot sidesteps entirely.
+///
+/// Connect by IP is offered on every platform, because it is the one route
+/// that does not depend on unsolicited packets arriving.
+class _BlockedHint extends StatelessWidget {
+  const _BlockedHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = context.colors;
+    final bool hasFirewallScreen =
+        NetworkSettingsService.supports(NetworkSetting.firewall);
+
+    final String explanation = switch (Platform.operatingSystem) {
+      'windows' =>
+        'Windows Firewall is the usual reason. If its prompt was dismissed '
+            'the first time HozaSend ran, incoming connections stay blocked '
+            'until you allow the app through.',
+      'macos' =>
+        'The macOS firewall is the usual reason. If it was set to block '
+            'incoming connections, HozaSend cannot be reached until it is '
+            'allowed through.',
+      _ =>
+        'This network may not let devices reach each other directly - common '
+            'on hotel, campus and guest Wi-Fi. A phone hotspot always works.',
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(Insets.lg),
+      decoration: BoxDecoration(
+        color: c.warning.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(Radii.md),
+        border: Border.all(color: c.warning.withValues(alpha: 0.32)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(Icons.shield_outlined, size: 18, color: c.warning),
+              const SizedBox(width: Insets.sm),
+              Expanded(
+                child: Text(
+                  'Still nothing found',
+                  style: context.text.titleSmall?.copyWith(color: c.warning),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Insets.sm),
+          Text(
+            explanation,
+            style: context.text.bodySmall?.copyWith(color: c.textSecondary),
+          ),
+          const SizedBox(height: Insets.md),
+          Wrap(
+            spacing: Insets.sm,
+            runSpacing: Insets.sm,
+            children: <Widget>[
+              if (hasFirewallScreen)
+                PillButton(
+                  icon: Icons.security_rounded,
+                  label: 'Firewall',
+                  tone: c.warning,
+                  tooltip: 'Open firewall settings',
+                  onPressed: () =>
+                      _openSetting(context, NetworkSetting.firewall),
+                ),
+              PillButton(
+                icon: Icons.dns_rounded,
+                label: 'Connect by IP',
+                tooltip: 'Type the other device’s address',
+                onPressed: () => showManualConnectSheet(context),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shortcuts into the system screens this app leans on, and the way in that
+/// needs no system screen at all.
+///
+/// HozaSend needs both devices on one network and can do nothing to put them
+/// there: switching a radio on stopped being something an ordinary app may do
+/// years ago, on every platform, and rightly so. What it can do is remove the
+/// walk through Settings - which is the whole difference between "connect both
+/// devices to the same Wi-Fi" as an instruction and as a button.
+///
+/// Connect by IP sits alongside them and is always present, on every platform.
+/// It is the only route that does not depend on discovery working at all, so
+/// it must not be reachable only from a card that appears when discovery has
+/// already given up.
+///
+/// Small, and at the very bottom, on purpose. Most of the time the network is
+/// already right and these are answers to a question nobody asked; they should
+/// be there when someone goes looking, without taking attention from Send and
+/// Receive.
+class _NetworkShortcuts extends StatelessWidget {
+  const _NetworkShortcuts();
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = context.colors;
+    final bool hasRadioScreens =
+        NetworkSettingsService.supports(NetworkSetting.wifi);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Insets.xl),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: Insets.sm,
+        runSpacing: Insets.sm,
+        children: <Widget>[
+          // Nothing to offer on iOS or Linux, and a button that does nothing
+          // is worse than no button.
+          if (hasRadioScreens) ...<Widget>[
+            PillButton(
+              icon: Icons.wifi_rounded,
+              label: 'Wi-Fi',
+              tooltip: 'Open Wi-Fi settings',
+              onPressed: () => _openSetting(context, NetworkSetting.wifi),
+            ),
+            PillButton(
+              icon: Icons.wifi_tethering_rounded,
+              label: 'Hotspot',
+              // Cyan against the Wi-Fi pill's brand blue. The two are a pair
+              // and should read as one row, but they are not the same action,
+              // and two identical pills side by side make a user read both
+              // labels to find out which is which.
+              tone: c.accent,
+              tooltip: 'Open hotspot settings',
+              onPressed: () => _openSetting(context, NetworkSetting.hotspot),
+            ),
+          ],
+          PillButton(
+            icon: Icons.dns_rounded,
+            label: 'Connect by IP',
+            // Quieter than the two beside it: this is the fallback, and it
+            // should not read as the first thing to try.
+            tone: c.textSecondary,
+            tooltip: 'Connect to a device by typing its address',
+            onPressed: () => showManualConnectSheet(context),
+          ),
+        ],
       ),
     );
   }

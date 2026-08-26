@@ -35,6 +35,14 @@ class IncomingRequest {
   bool _resolved = false;
   bool get isResolved => _resolved;
 
+  final Completer<void> _done = Completer<void>();
+
+  /// Completes when this request stops being actionable, for any reason.
+  /// Separate from [onResolved] because the server and the controller both
+  /// need to know, and a single callback slot means whoever assigns second
+  /// silently replaces the first.
+  Future<void> get resolved => _done.future;
+
   /// Fired when this request stops being actionable, for any reason.
   void Function()? onResolved;
 
@@ -58,6 +66,7 @@ class IncomingRequest {
     _resolved = true;
     _timeout?.cancel();
     _timeout = null;
+    if (!_done.isCompleted) _done.complete();
     onResolved?.call();
   }
 }
@@ -79,11 +88,29 @@ class ConnectionServer {
   static const String _tag = 'Connection';
 
   ServerSocket? _server;
+
+  /// The request already on this user's screen, if any.
+  ///
+  /// Tracked here rather than only in the controller because the controller
+  /// learns about a request one microtask late, through a broadcast stream.
+  /// Two devices connecting in the same instant would both slip through that
+  /// gap, and the first user's prompt would be replaced by the second without
+  /// either peer being told - the first would simply hang until it timed out.
+  IncomingRequest? _pending;
+
   final StreamController<IncomingRequest> _requests =
       StreamController<IncomingRequest>.broadcast();
 
   Stream<IncomingRequest> get requests => _requests.stream;
   bool get isRunning => _server != null;
+
+  /// True while this device cannot take another connection: it is already in
+  /// one, or it is asking the user about one.
+  bool get _isEngaged {
+    final IncomingRequest? pending = _pending;
+    if (pending != null && !pending.isResolved) return true;
+    return isBusy();
+  }
 
   /// False if the port could not be opened; the caller turns that into a
   /// message the user can act on.
@@ -114,6 +141,10 @@ class ConnectionServer {
   Future<void> stop() async {
     final ServerSocket? server = _server;
     _server = null;
+    // A request nobody can answer any more is declined rather than left to
+    // time out, so the other device is told at once instead of in 45 seconds.
+    _pending?.reject('unavailable');
+    _pending = null;
     await server?.close();
   }
 
@@ -182,7 +213,8 @@ class ConnectionServer {
       return;
     }
 
-    if (isBusy()) {
+    if (_isEngaged) {
+      Log.info(_tag, 'Refusing ${device.name}: already engaged');
       session.send(ControlMessage.error('busy', 'Already in a transfer'));
       unawaited(session.close(HozaError.deviceBusy));
       return;
@@ -196,7 +228,20 @@ class ConnectionServer {
     session.send(ControlMessage.welcome(selfDevice()));
 
     Log.info(_tag, 'Connection request from ${device.name} ($address)');
-    if (_requests.isClosed) return;
-    _requests.add(IncomingRequest(session: session, device: device));
+    if (_requests.isClosed) {
+      unawaited(session.close(HozaError.lost));
+      return;
+    }
+
+    final IncomingRequest request =
+        IncomingRequest(session: session, device: device);
+    // Claimed synchronously, before the broadcast stream has told anyone, so
+    // a second connection arriving in the same instant is refused rather than
+    // quietly taking the first one's place.
+    _pending = request;
+    request.resolved.then((_) {
+      if (identical(_pending, request)) _pending = null;
+    });
+    _requests.add(request);
   }
 }

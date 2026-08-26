@@ -30,6 +30,7 @@ enum NetworkState {
 class DiscoveryController extends ChangeNotifier with WidgetsBindingObserver {
   DiscoveryController(this._settings) {
     _service = DiscoveryService(selfDevice: _selfDevice);
+    _service.onDiagnostics = notifyListeners;
     _subscription = _service.stream.listen(_onDevices);
     WidgetsBinding.instance.addObserver(this);
   }
@@ -44,10 +45,28 @@ class DiscoveryController extends ChangeNotifier with WidgetsBindingObserver {
   /// radar keeps sweeping before the screen stops implying progress.
   static const Duration _searchWindow = Duration(seconds: 60);
 
+  /// How long a backgrounded app keeps discovery alive before shutting it
+  /// down.
+  ///
+  /// Android pauses the activity for things that are not really leaving:
+  /// opening the file picker, answering a permission dialog, pulling down the
+  /// notification shade. Tearing discovery down for those means broadcasting
+  /// goodbye, vanishing from every other device's list, and rebuilding the
+  /// whole thing a second later - which reads as "the other phone keeps
+  /// disappearing". A few seconds of grace covers every one of them, and a
+  /// user who really has left the app is still not paying for it.
+  static const Duration _backgroundGrace = Duration(seconds: 8);
+
   final SettingsController _settings;
   late final DiscoveryService _service;
   late final StreamSubscription<List<HozaDevice>> _subscription;
   Timer? _searchTimer;
+  Timer? _backgroundTimer;
+
+  /// Consulted before discovery is stopped for being backgrounded. Wired to
+  /// the connection layer in `main`, so a phone in the middle of a transfer
+  /// with its screen off does not announce that it has left.
+  bool Function()? keepRunningWhile;
 
   List<HozaDevice> _devices = const <HozaDevice>[];
   NetworkState _network = NetworkState.checking;
@@ -67,9 +86,29 @@ class DiscoveryController extends ChangeNotifier with WidgetsBindingObserver {
 
   bool get isRunning => _service.isRunning;
 
+  /// True when discovery has exhausted everything it can do and found nobody.
+  ///
+  /// Deliberately not shown the instant the list is empty. An empty list
+  /// usually means the other device is not ready yet, and saying "your network
+  /// is blocking this" to someone whose friend has not opened the app is both
+  /// wrong and alarming. This only becomes true after broadcast, unicast
+  /// replies and several full subnet sweeps have all come back with nothing -
+  /// at which point the remaining explanations are a firewall, an access point
+  /// isolating its clients, or two devices on networks that cannot reach each
+  /// other, and none of them will resolve by waiting longer.
+  ///
+  /// False while the network is down, because then there is a simpler and
+  /// truer thing to say.
+  bool get seemsBlocked =>
+      _network == NetworkState.ready &&
+      _devices.isEmpty &&
+      _service.seemsBlocked;
+
   /// Begins advertising and listening. Safe to call when already running.
   Future<void> start() async {
     _errorMessage = null;
+    _backgroundTimer?.cancel();
+    _backgroundTimer = null;
     if (_network != NetworkState.ready) {
       _network = NetworkState.checking;
       notifyListeners();
@@ -109,12 +148,26 @@ class DiscoveryController extends ChangeNotifier with WidgetsBindingObserver {
       await start();
       return;
     }
+
+    // Re-checked rather than assumed. Discovery started on a network that may
+    // have gone away since - Wi-Fi dropped, the other phone's hotspot switched
+    // off - and answering "no devices nearby" to that is technically true and
+    // completely useless. The honest answer is that there is nothing to search.
+    if (!await NetworkInfo.hasLocalNetwork()) {
+      stop();
+      _network = NetworkState.offline;
+      notifyListeners();
+      return;
+    }
+
     _openSearchWindow();
     notifyListeners();
     await _service.refresh();
   }
 
   void stop() {
+    _backgroundTimer?.cancel();
+    _backgroundTimer = null;
     _service.stop();
     unawaited(WifiLockService.release());
     _searchTimer?.cancel();
@@ -126,12 +179,22 @@ class DiscoveryController extends ChangeNotifier with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Android freezes sockets in the background anyway. Stopping explicitly
     // saves battery and lets peers drop us straight away via the goodbye
-    // beacon, rather than showing a device that is not really there.
+    // beacon, rather than showing a device that is not really there - but only
+    // once it is clear the user has actually left, not merely opened a picker.
     switch (state) {
       case AppLifecycleState.resumed:
-        if (!_service.isRunning) unawaited(start());
+        _backgroundTimer?.cancel();
+        _backgroundTimer = null;
+        if (!_service.isRunning) {
+          unawaited(start());
+        } else {
+          // Back from wherever they went, and the network may have changed
+          // while the app was away. Re-announcing costs one packet and saves a
+          // stale list.
+          unawaited(_service.refresh());
+        }
       case AppLifecycleState.paused:
-        stop();
+        _scheduleBackgroundStop();
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
@@ -139,10 +202,24 @@ class DiscoveryController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  void _scheduleBackgroundStop() {
+    if (!_service.isRunning) return;
+    _backgroundTimer?.cancel();
+    _backgroundTimer = Timer(_backgroundGrace, () {
+      _backgroundTimer = null;
+      // A live session is traffic of its own; announcing goodbye in the middle
+      // of one would take this device off the other user's screen while it is
+      // still sending them a file.
+      if (keepRunningWhile?.call() ?? false) return;
+      stop();
+    });
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _searchTimer?.cancel();
+    _backgroundTimer?.cancel();
     _subscription.cancel();
     _service.dispose();
     super.dispose();

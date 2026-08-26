@@ -5,12 +5,27 @@ import '../../core/models/hoza_device.dart';
 
 /// Why a beacon was sent.
 enum BeaconType {
-  /// "I am here." Repeated every [AppConstants.beaconInterval].
+  /// "I am here." Broadcast every [AppConstants.beaconInterval], and sent
+  /// unicast to a single address during a sweep. Always asks for an answer.
   hello,
+
+  /// "I am here, and I am answering you." Sent unicast, straight back to
+  /// whoever said hello.
+  ///
+  /// The distinction is the whole point: a reply is never answered, so two
+  /// devices settle into one beacon and one reply per interval instead of
+  /// echoing each other forever. It also means discovery survives a network
+  /// that only carries broadcast one way, which is the common failure -
+  /// Windows Firewall dropping inbound UDP, or an access point filtering
+  /// broadcast towards its clients. One working direction is now enough.
+  reply,
 
   /// "I am leaving." Sent once on shutdown so peers can drop this device
   /// immediately instead of waiting out the timeout.
-  goodbye,
+  goodbye;
+
+  /// True if receiving this should make us announce ourselves straight back.
+  bool get wantsReply => this == hello;
 }
 
 /// The discovery packet: a short magic prefix followed by compact JSON.
@@ -70,6 +85,9 @@ class DiscoveryBeacon {
     if (device == null) return null;
 
     return DiscoveryBeacon(
+      // An unknown type falls back to hello, which is what a build older than
+      // the one that sent it should do: the packet still means "I am here",
+      // and answering it costs one unicast packet.
       type: BeaconType.values.firstWhere(
         (BeaconType type) => type.name == payload['t'],
         orElse: () => BeaconType.hello,

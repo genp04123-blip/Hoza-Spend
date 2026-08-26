@@ -32,6 +32,12 @@ Future<void> main() async {
   final DiscoveryController discovery = DiscoveryController(settings);
   final ConnectionController connection = ConnectionController(settings);
 
+  // The one thing discovery needs to know about connections: whether it is
+  // safe to go quiet when the app is backgrounded. Announcing goodbye during a
+  // live transfer would take this device off the other user's screen while it
+  // is still sending them a file.
+  discovery.keepRunningWhile = () => connection.isConnected;
+
   runApp(
     HozaApp(
       settings: settings,

@@ -1,6 +1,7 @@
 package com.example.hoza_send
 
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -9,6 +10,8 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -26,6 +29,7 @@ import java.io.File
 class MainActivity : FlutterActivity() {
 
     private var multicastLock: WifiManager.MulticastLock? = null
+    private var linkLock: WifiManager.WifiLock? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -39,6 +43,14 @@ class MainActivity : FlutterActivity() {
                     }
                     "release" -> {
                         releaseLock()
+                        result.success(true)
+                    }
+                    "acquireLink" -> {
+                        acquireLinkLock()
+                        result.success(true)
+                    }
+                    "releaseLink" -> {
+                        releaseLinkLock()
                         result.success(true)
                     }
                     else -> result.notImplemented()
@@ -73,6 +85,129 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SETTINGS_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "openWifi" -> result.success(openFirst(wifiScreens()))
+                    "openHotspot" -> result.success(openFirst(hotspotScreens()))
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SESSION_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // One method for both starting and updating: starting a
+                    // service that is already running is how Android delivers
+                    // a new intent to it, so the two are the same call.
+                    "show" -> result.success(
+                        showSession(
+                            call.argument<String>("title") ?: "HozaSend",
+                            call.argument<String>("text").orEmpty(),
+                            call.argument<Int>("progress") ?: -1,
+                        ),
+                    )
+                    "hide" -> {
+                        hideSession()
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    // --- Session lifetime ----------------------------------------------------
+
+    /**
+     * Puts up - or refreshes - the notification that keeps this process alive
+     * while a session is running.
+     *
+     * Returns false if Android refused. From Android 12 a foreground service
+     * cannot be started from the background, and a session that begins while
+     * the app is not on screen (auto-accept, say) will land there. That is not
+     * an error worth showing anyone: the transfer proceeds exactly as it did
+     * before this existed, and only loses its protection from being frozen.
+     */
+    private fun showSession(title: String, text: String, progress: Int): Boolean {
+        val intent = Intent(this, TransferService::class.java)
+            .putExtra(TransferService.EXTRA_TITLE, title)
+            .putExtra(TransferService.EXTRA_TEXT, text)
+            .putExtra(TransferService.EXTRA_PROGRESS, progress)
+        return try {
+            ContextCompat.startForegroundService(this, intent)
+            true
+        } catch (error: Exception) {
+            false
+        }
+    }
+
+    private fun hideSession() {
+        try {
+            startService(
+                Intent(this, TransferService::class.java)
+                    .setAction(TransferService.ACTION_STOP),
+            )
+        } catch (error: Exception) {
+            // Already gone, or the process is being torn down anyway.
+        }
+    }
+
+    // --- System settings -----------------------------------------------------
+
+    /**
+     * Takes the user to the Wi-Fi screen.
+     *
+     * The app cannot switch Wi-Fi on itself - that stopped being something a
+     * normal app may do in Android 10, and rightly so. Opening the screen is
+     * the whole of what is on offer.
+     */
+    private fun wifiScreens(): List<Intent> = listOf(
+        Intent(Settings.ACTION_WIFI_SETTINGS),
+        // Every device has this one, so the list can never come up empty.
+        Intent(Settings.ACTION_WIRELESS_SETTINGS),
+        Intent(Settings.ACTION_SETTINGS),
+    )
+
+    /**
+     * Takes the user to the hotspot screen, or as close to it as this device
+     * allows.
+     *
+     * There is no public action for tethering - the constant exists but is
+     * hidden - so the exact screen has to be asked for by name, and OEMs move
+     * it. The named screens are tried first because they land exactly where
+     * the user wants to be; the public wireless-settings screen is the floor,
+     * and hotspot is one tap from it on every Android there has ever been.
+     */
+    private fun hotspotScreens(): List<Intent> = listOf(
+        Intent().setComponent(
+            ComponentName(SETTINGS_PACKAGE, "com.android.settings.TetherSettings"),
+        ),
+        Intent().setComponent(
+            ComponentName(
+                SETTINGS_PACKAGE,
+                "com.android.settings.Settings\$TetherSettingsActivity",
+            ),
+        ),
+        Intent(TETHER_ACTION),
+        Intent(Settings.ACTION_WIRELESS_SETTINGS),
+        Intent(Settings.ACTION_SETTINGS),
+    )
+
+    /** Opens the first screen this device is willing to show. */
+    private fun openFirst(candidates: List<Intent>): Boolean {
+        for (intent in candidates) {
+            try {
+                startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return true
+            } catch (error: ActivityNotFoundException) {
+                // This build of Android does not have that screen under that
+                // name. Try the next one.
+            } catch (error: SecurityException) {
+                // Some OEMs ship the tether screen but do not export it.
+            }
+        }
+        return false
     }
 
     // --- Discovery -----------------------------------------------------------
@@ -94,10 +229,45 @@ class MainActivity : FlutterActivity() {
         multicastLock = null
     }
 
+    /**
+     * Keeps Wi-Fi out of its power-saving duty cycle while a session is live.
+     *
+     * A different lock from the multicast one and not a substitute for it: the
+     * multicast lock decides which packets are delivered, this one decides how
+     * awake the radio is. A large transfer with the screen off is throttled
+     * hard without it, to the point of missing enough heartbeats to be called
+     * a dropped connection.
+     */
+    private fun acquireLinkLock() {
+        if (linkLock?.isHeld == true) return
+        val wifi = applicationContext
+            .getSystemService(Context.WIFI_SERVICE) as? WifiManager ?: return
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+        } else {
+            @Suppress("DEPRECATION")
+            WifiManager.WIFI_MODE_FULL_HIGH_PERF
+        }
+        linkLock = wifi.createWifiLock(mode, LINK_TAG).apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+    }
+
+    private fun releaseLinkLock() {
+        linkLock?.let { if (it.isHeld) it.release() }
+        linkLock = null
+    }
+
     override fun onDestroy() {
         // The radio must not be left awake if the activity goes away while
-        // discovery is still running.
+        // discovery or a transfer is still running.
         releaseLock()
+        releaseLinkLock()
+        // The activity going away takes the Dart isolate with it, so there is
+        // no session left for the notification to be about. Leaving it up
+        // would be a progress bar for a transfer that has already stopped.
+        hideSession()
         super.onDestroy()
     }
 
@@ -290,7 +460,14 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val WIFI_CHANNEL = "hozasend/wifi_lock"
         private const val STORAGE_CHANNEL = "hozasend/storage"
+        private const val SETTINGS_CHANNEL = "hozasend/system_settings"
+        private const val SESSION_CHANNEL = "hozasend/session"
+        private const val SETTINGS_PACKAGE = "com.android.settings"
+
+        /** Hidden in the SDK, so it has to be written out. */
+        private const val TETHER_ACTION = "android.settings.TETHER_SETTINGS"
         private const val LOCK_TAG = "hozasend.discovery"
+        private const val LINK_TAG = "hozasend.transfer"
         private const val FOLDER = "HozaSend"
         private const val BUFFER = 64 * 1024
     }

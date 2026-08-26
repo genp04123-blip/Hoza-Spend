@@ -9,6 +9,21 @@
          saving starts filtering them, which happens as soon as the screen
          dims. Held only while discovery is running. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
+    <!-- Required by WifiManager.WifiLock, which keeps the radio out of its
+         power-saving duty cycle while a transfer is running. Without it a
+         large file with the screen off crawls and can miss enough heartbeats
+         to be reported as a dropped connection. Held only for the life of a
+         session; this is a normal permission with no runtime prompt. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- A Wi-Fi lock keeps the radio awake; it does nothing about the process,
+         which Android freezes shortly after the last activity stops. A user
+         who switches away mid-transfer would come back to a dead connection.
+         A foreground service is the sanctioned way to say this process has
+         work the user asked for, and dataSync is the type that describes it:
+         moving the user's own files between their own devices. Started only
+         while a session is live, and stopped the moment it ends. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <!-- Android 13+. Requested at runtime; declining only costs the alerts. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Lets a received APK be handed to the system installer when the user
@@ -51,6 +66,13 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Keeps the process alive while a session is live, so a transfer
+             survives the user switching to another app. Not exported: nothing
+             outside HozaSend has any business starting it. -->
+        <service
+            android:name=".TransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
         <!-- Lets a received file be opened in the app that handles its kind.
              Another process cannot be handed a file:// URI since API 24, so a
              file opened by path goes through here instead. Only reached on
@@ -90,5 +112,12 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:mimeType="*/*"/>
         </intent>
+        <!-- The hotspot screen has no public action, so it has to be asked for
+             by class name - and from Android 11 an explicit intent to a package
+             this app has not declared an interest in fails as though the
+             activity did not exist. Without this the Hotspot shortcut still
+             works, but always lands on the general wireless screen instead of
+             the hotspot one. -->
+        <package android:name="com.android.settings"/>
     </queries>
 </manifest>

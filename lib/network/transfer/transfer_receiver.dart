@@ -189,7 +189,23 @@ class TransferReceiver {
   /// parsed as control lines.
   void _onFileHeader(ControlMessage message) {
     final TransferFile? file = message.fileHeaderValue;
-    if (file == null || _transferId == null) return;
+    if (file == null) return;
+
+    if (_transferId == null || _finished) {
+      // Nothing to write into - the transfer already failed or was cancelled -
+      // but the sender is mid-stream and those bytes are arriving either way.
+      // Swallowing them keeps the framing intact, so the connection survives
+      // to be used again. Ignoring the header instead would leave the file's
+      // own contents to be parsed as control lines, which ends with the
+      // reader overflowing and the whole session being dropped.
+      Log.info(_tag, 'Draining "${file.name}"; no transfer is active');
+      _session.expectBinary(
+        file.size,
+        onBytes: (List<int> _) {},
+        onDone: () {},
+      );
+      return;
+    }
 
     _tracker?.beginFile(file.name);
     _sinceFlush = 0;
