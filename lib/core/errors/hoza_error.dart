@@ -69,9 +69,29 @@ class HozaError implements Exception {
         'devices to continue.',
   );
 
+  /// The *other* device has no room left. Worth keeping apart from
+  /// [atCapacity]: one of them is something this user can fix from here, and
+  /// the other is only fixable by the person holding the other device.
   static const HozaError deviceBusy = HozaError(
     HozaErrorKind.busy,
-    'That device is busy with another transfer.\nTry again in a moment.',
+    'That device is already connected to as many devices as it can take.'
+        '\nAsk them to disconnect one, then try again.',
+  );
+
+  /// The other device took the connection but is mid-transfer with somebody
+  /// else. Nothing is wrong and nobody said no, which is why it must not be
+  /// reported as a refusal.
+  static const HozaError deviceTransferring = HozaError(
+    HozaErrorKind.busy,
+    'That device is in the middle of another transfer.'
+        '\nTry again when it has finished.',
+  );
+
+  /// This device has no room left.
+  static const HozaError atCapacity = HozaError(
+    HozaErrorKind.busy,
+    'You are already connected to as many devices as HozaSend holds at once.'
+        '\nDisconnect one to connect to another.',
   );
 
   static const HozaError cancelled = HozaError(

@@ -137,6 +137,12 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// Answers pending requests one at a time, oldest first.
+  ///
+  /// Two devices can now knock at once, and stacking their prompts on top of
+  /// each other would put a decision under a decision. Looping here is what
+  /// keeps the queue draining after the first answer, since nothing else
+  /// notifies once the sheet has closed.
   void _onConnectionChanged() {
     final ConnectionController? connection = _connection;
     if (connection == null || _promptVisible || connection.incoming == null) {
@@ -147,15 +153,24 @@ class _HomeScreenState extends State<HomeScreen> {
     // Deferred because the notification can arrive mid-build, and pushing a
     // route during build throws.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) {
+      try {
+        while (connection.incoming != null) {
+          if (!mounted) return;
+          // Counted rather than asking whether anything is connected: with
+          // several devices up, this user may well already have been connected
+          // before answering, and rejecting must not open a session sheet.
+          final int before = connection.connectedCount;
+          await showIncomingRequestSheet(context);
+          if (!mounted) return;
+          // Accepting leaves a live session. Show it, rather than dropping the
+          // user back on a home screen that looks like nothing happened.
+          if (connection.connectedCount > before) {
+            await showSessionSheet(context);
+          }
+        }
+      } finally {
         _promptVisible = false;
-        return;
       }
-      await showIncomingRequestSheet(context);
-      // Accepting leaves a live session. Show it, rather than dropping the
-      // user back on a home screen that looks like nothing happened.
-      if (mounted && connection.isConnected) await showSessionSheet(context);
-      _promptVisible = false;
     });
   }
 
@@ -251,6 +266,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ? 'This device'
                                     : settings.deviceName,
                               ),
+                              // How many devices are live. The nearby list
+                              // marks them one by one, but the count is what
+                              // answers "am I still connected to the laptop
+                              // as well?" without reading three rows.
+                              if (connection.connectedCount > 0)
+                                StatusPill(
+                                  label: connection.connectedCount == 1
+                                      ? '1 device connected'
+                                      : '${connection.connectedCount} devices '
+                                          'connected',
+                                  tone: StatusTone.positive,
+                                ),
                               // Without the listening port, other devices can
                               // find this one but never reach it. Worth saying
                               // plainly.

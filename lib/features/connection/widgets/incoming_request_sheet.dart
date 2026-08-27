@@ -35,6 +35,13 @@ class _IncomingRequestSheet extends StatefulWidget {
 class _IncomingRequestSheetState extends State<_IncomingRequestSheet> {
   bool _closing = false;
 
+  /// The request this sheet is asking about, taken once.
+  ///
+  /// Two devices can be queued at the same time, and re-reading the queue on
+  /// every build would swap the name and the code under the user's finger the
+  /// instant they answer the first one. The next request gets its own sheet.
+  IncomingRequest? _request;
+
   void _close([VoidCallback? action]) {
     if (_closing) return;
     _closing = true;
@@ -55,10 +62,10 @@ class _IncomingRequestSheetState extends State<_IncomingRequestSheet> {
     final AppColors c = context.colors;
     final ConnectionController connection =
         context.watch<ConnectionController>();
-    final IncomingRequest? request = connection.incoming;
+    final IncomingRequest? request = _request ??= connection.incoming;
 
     // Resolved without this user: it timed out, or the other device gave up.
-    if (request == null) {
+    if (request == null || (request.isResolved && !_closing)) {
       if (!_closing) {
         _closing = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {

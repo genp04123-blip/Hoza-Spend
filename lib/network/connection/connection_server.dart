@@ -77,26 +77,30 @@ class IncomingRequest {
 /// Every device runs one of these. There is no "sender" and "receiver" build:
 /// the same app both offers and accepts.
 class ConnectionServer {
-  ConnectionServer({required this.selfDevice, required this.isBusy});
+  ConnectionServer({required this.selfDevice, required this.canAccept});
 
   final SelfDeviceProvider selfDevice;
 
-  /// Consulted before a request is raised. A device already in a session
-  /// refuses politely instead of dropping the user into two at once.
-  final bool Function() isBusy;
+  /// Asked before a request is raised: is there room for [device], given
+  /// [pending] other requests already waiting on this user's answer?
+  ///
+  /// The controller owns the answer, because only it knows about the sessions
+  /// this device dialled out to; the server sees only the ones that came in.
+  /// It says yes to a device that is already linked, because that is one
+  /// device replacing its own stale session rather than a new arrival.
+  final bool Function(HozaDevice device, int pending) canAccept;
 
   static const String _tag = 'Connection';
 
   ServerSocket? _server;
 
-  /// The request already on this user's screen, if any.
+  /// Requests already on this user's screen, or about to be.
   ///
   /// Tracked here rather than only in the controller because the controller
   /// learns about a request one microtask late, through a broadcast stream.
   /// Two devices connecting in the same instant would both slip through that
-  /// gap, and the first user's prompt would be replaced by the second without
-  /// either peer being told - the first would simply hang until it timed out.
-  IncomingRequest? _pending;
+  /// gap, and both could take the same last free slot.
+  final List<IncomingRequest> _pending = <IncomingRequest>[];
 
   final StreamController<IncomingRequest> _requests =
       StreamController<IncomingRequest>.broadcast();
@@ -104,12 +108,10 @@ class ConnectionServer {
   Stream<IncomingRequest> get requests => _requests.stream;
   bool get isRunning => _server != null;
 
-  /// True while this device cannot take another connection: it is already in
-  /// one, or it is asking the user about one.
-  bool get _isEngaged {
-    final IncomingRequest? pending = _pending;
-    if (pending != null && !pending.isResolved) return true;
-    return isBusy();
+  /// Requests still waiting on an answer.
+  int get pendingCount {
+    _pending.removeWhere((IncomingRequest request) => request.isResolved);
+    return _pending.length;
   }
 
   /// False if the port could not be opened; the caller turns that into a
@@ -141,10 +143,13 @@ class ConnectionServer {
   Future<void> stop() async {
     final ServerSocket? server = _server;
     _server = null;
-    // A request nobody can answer any more is declined rather than left to
-    // time out, so the other device is told at once instead of in 45 seconds.
-    _pending?.reject('unavailable');
-    _pending = null;
+    // Requests nobody can answer any more are declined rather than left to
+    // time out, so the other devices hear about it at once instead of in 45
+    // seconds.
+    for (final IncomingRequest request in _pending.toList()) {
+      request.reject('unavailable');
+    }
+    _pending.clear();
     await server?.close();
   }
 
@@ -213,9 +218,22 @@ class ConnectionServer {
       return;
     }
 
-    if (_isEngaged) {
-      Log.info(_tag, 'Refusing ${device.name}: already engaged');
-      session.send(ControlMessage.error('busy', 'Already in a transfer'));
+    _pending.removeWhere((IncomingRequest request) => request.isResolved);
+
+    // A device asking twice is one device, not two. It happens whenever the
+    // app is restarted while this side still holds the old socket, and
+    // counting the stale request against the free slots is exactly how a user
+    // ends up being told a device is busy with nobody.
+    for (final IncomingRequest request in _pending.toList()) {
+      if (!request.device.isSameAs(device)) continue;
+      Log.info(_tag, '${device.name} asked again; superseding its request');
+      request.reject('superseded');
+    }
+    _pending.removeWhere((IncomingRequest request) => request.isResolved);
+
+    if (!canAccept(device, _pending.length)) {
+      Log.info(_tag, 'Refusing ${device.name}: no free session');
+      session.send(ControlMessage.error('busy', 'No free session'));
       unawaited(session.close(HozaError.deviceBusy));
       return;
     }
@@ -236,12 +254,9 @@ class ConnectionServer {
     final IncomingRequest request =
         IncomingRequest(session: session, device: device);
     // Claimed synchronously, before the broadcast stream has told anyone, so
-    // a second connection arriving in the same instant is refused rather than
-    // quietly taking the first one's place.
-    _pending = request;
-    request.resolved.then((_) {
-      if (identical(_pending, request)) _pending = null;
-    });
+    // connections arriving in the same instant cannot both take the last slot.
+    _pending.add(request);
+    request.resolved.then((_) => _pending.remove(request));
     _requests.add(request);
   }
 }

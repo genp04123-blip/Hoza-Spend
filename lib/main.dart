@@ -42,7 +42,10 @@ Future<void> main(List<String> arguments) async {
   // safe to go quiet when the app is backgrounded. Announcing goodbye during a
   // live transfer would take this device off the other user's screen while it
   // is still sending them a file.
-  discovery.keepRunningWhile = () => connection.isConnected;
+  // Any live session counts, not just the one the send screen happens to be
+  // pointed at: going quiet because *that* one ended would take this device
+  // off the screen of the two it is still connected to.
+  discovery.keepRunningWhile = () => connection.connectedCount > 0;
 
   runApp(
     HozaApp(

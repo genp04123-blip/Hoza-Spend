@@ -28,6 +28,14 @@ class AppConstants {
   /// TCP port for the control channel and file streams.
   static const int transferPort = 47821;
 
+  /// How many devices this one will hold a session with at the same time.
+  ///
+  /// Each session is a socket, a heartbeat and a receiver, so the ceiling is
+  /// about keeping a phone tidy rather than about the protocol - nothing in
+  /// the wire format cares how many peers there are. Three is about what a
+  /// person can keep track of on one screen.
+  static const int maxSessions = 3;
+
   /// Prefix on every beacon so unrelated UDP traffic on this port is ignored.
   static const String beaconMagic = 'HOZA1';
 

@@ -20,7 +20,6 @@ import '../../shared/widgets/hoza_buttons.dart';
 import '../../shared/widgets/section_header.dart';
 import '../connection/connection_controller.dart';
 import '../connection/widgets/connect_sheet.dart';
-import '../discovery/widgets/device_tile.dart';
 import '../discovery/widgets/nearby_devices.dart';
 import '../transfer/transfer_controller.dart';
 import 'selection_controller.dart';
@@ -195,9 +194,15 @@ class _FilesSection extends StatelessWidget {
   }
 }
 
-/// Who the files are going to. A connected device is shown as a single card;
-/// otherwise the nearby list appears here so the user can pick without
-/// leaving the screen.
+/// Who the files are going to.
+///
+/// One list, always - the nearby devices, with the connected ones marked and
+/// the one this send is aimed at marked differently again. It used to collapse
+/// to a single card as soon as anything was connected, which is fine with one
+/// peer and hides the other two the moment there are three.
+///
+/// Tapping a device that is already connected only points the send at it.
+/// Tapping one that is not connects to it first.
 class _TargetSection extends StatelessWidget {
   const _TargetSection({required this.connection});
 
@@ -205,31 +210,33 @@ class _TargetSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HozaDevice? peer = connection.peer;
-
-    if (connection.isConnected && peer != null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          const SectionHeader(title: 'Sending to'),
-          DeviceTile(
-            device: peer.copyWith(status: DeviceStatus.connected),
-            onTap: () => showSessionSheet(context, fromSelection: true),
-          ),
-        ],
-      );
-    }
+    final int count = connection.connectedCount;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const SectionHeader(title: 'Send to'),
+        SectionHeader(
+          title: count > 1 ? 'Send to (tap to switch)' : 'Send to',
+        ),
         NearbyDevices(
-          onSelect: (HozaDevice device) =>
-              showConnectSheet(context, device, fromSelection: true),
+          markTarget: true,
+          onSelect: (HozaDevice device) => _select(context, device),
         ),
       ],
     );
+  }
+
+  void _select(BuildContext context, HozaDevice device) {
+    final PeerLink? link = connection.linkFor(device);
+    // Already connected: switching target is not a connection event, so it
+    // must not put a sheet in front of someone who is halfway through picking
+    // files. The row and the send button both change, which is the whole of
+    // what happened.
+    if (link != null && link.isConnected) {
+      connection.setActive(link);
+      return;
+    }
+    showConnectSheet(context, device, fromSelection: true);
   }
 }
 
@@ -251,6 +258,7 @@ class _SendBar extends StatelessWidget {
     final AppColors c = context.colors;
     final HozaDevice? peer = connection.peer;
     final bool ready = connection.isConnected && peer != null;
+    final int connected = connection.connectedCount;
 
     return Container(
       padding: EdgeInsets.fromLTRB(
@@ -271,6 +279,18 @@ class _SendBar extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: Insets.md),
               child: Text(
                 'Choose a device above to send to.',
+                style: context.text.bodySmall?.copyWith(color: c.textSecondary),
+              ),
+            )
+          // Files go to one device at a time. With several connected, saying
+          // which one is about to receive them - and that the others are still
+          // there - is the difference between a deliberate send and a guess.
+          else if (connected > 1)
+            Padding(
+              padding: const EdgeInsets.only(bottom: Insets.md),
+              child: Text(
+                'Tap another connected device above to send there instead. '
+                'The other ${connected - 1} stay connected.',
                 style: context.text.bodySmall?.copyWith(color: c.textSecondary),
               ),
             ),

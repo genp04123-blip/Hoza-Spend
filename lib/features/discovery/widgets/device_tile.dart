@@ -16,10 +16,20 @@ class DeviceTile extends StatelessWidget {
     required this.device,
     this.onTap,
     this.onDisconnect,
+    this.statusLabel,
+    this.statusTone,
   });
 
   final HozaDevice device;
   final VoidCallback? onTap;
+
+  /// Overrides the status pill.
+  ///
+  /// For the one thing discovery cannot know: which of several connected
+  /// devices the send screen is currently aimed at. Everything else about a
+  /// row comes from [device].
+  final String? statusLabel;
+  final StatusTone? statusTone;
 
   /// Hangs up the live session. Given only for the device this one is actually
   /// connected to - and shown right there on its row, because that is where a
@@ -49,7 +59,9 @@ class DeviceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors c = context.colors;
-    final (String label, StatusTone tone) = _status;
+    final (String label, StatusTone tone) = statusLabel == null
+        ? _status
+        : (statusLabel!, statusTone ?? StatusTone.positive);
 
     final Widget card = HozaCard(
       onTap: onTap,

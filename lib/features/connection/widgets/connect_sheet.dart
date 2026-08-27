@@ -7,6 +7,7 @@ import '../../../app/router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_theme.dart';
 import '../../../app/theme/app_tokens.dart';
+import '../../../core/errors/hoza_error.dart';
 import '../../../core/models/hoza_device.dart';
 import '../../../shared/widgets/hoza_buttons.dart';
 import '../../../shared/widgets/hoza_sheet.dart';
@@ -163,11 +164,14 @@ class _ConnectSheetState extends State<_ConnectSheet> {
           // Either side can start, so the sheet has to offer both directions.
           // The device that pressed Accept is usually the one waiting to
           // receive, and until now this screen only let it send.
-          _subtitle(context, 'This session is trusted. Send files, or wait to '
-              'receive them.'),
+          _subtitle(context, _connectedSubtitle(connection)),
           const SizedBox(height: Insets.xl),
           SessionCodeView(code: connection.code ?? ''),
           const SizedBox(height: Insets.xl),
+          // Two ways out, and both of them leave the session up. There is no
+          // third "OK" button: it only ever closed the sheet, and every route
+          // off this screen already does that, so it was a button whose whole
+          // job was to be pressed and forgotten.
           if (widget.fromSelection)
             HozaPrimaryButton(
               label: 'Continue',
@@ -184,29 +188,24 @@ class _ConnectSheetState extends State<_ConnectSheet> {
           HozaSecondaryButton(
             label: 'Receive',
             icon: Icons.download_rounded,
+            foreground: c.success,
+            edge: ButtonEdge(color: c.success),
             // Leaves the session up: the receive screen is where the user
             // waits, and dropping the connection to get there would undo the
             // pairing they just did.
             onPressed: _waitToReceive,
-          ),
-          const SizedBox(height: Insets.md),
-          // Just closes the sheet. It used to hang up as well, which meant the
-          // only way out of this screen was to undo the pairing that had just
-          // been made - green, and named for what it is: the session stays up,
-          // and Disconnect now lives next to the device itself.
-          HozaSecondaryButton(
-            label: 'OK',
-            foreground: c.success,
-            edge: ButtonEdge(color: c.success),
-            onPressed: () => _close(() {}),
           ),
         ];
 
       case SessionState.rejected:
       case SessionState.failed:
         final HozaDevice? peer = connection.peer;
-        final bool retryable =
-            connection.state == SessionState.failed && peer != null;
+        // Nothing to retry when the limit is this device's own: pressing it
+        // again would fail identically until a session is hung up, and the
+        // message already says so.
+        final bool retryable = connection.state == SessionState.failed &&
+            peer != null &&
+            !identical(connection.error, HozaError.atCapacity);
         return <Widget>[
           Center(
             child: SheetBadge(
@@ -262,6 +261,22 @@ class _ConnectSheetState extends State<_ConnectSheet> {
           ),
         ];
     }
+  }
+
+  /// Says how many devices are up, because with more than one the number is
+  /// the thing a person is checking for - and how many more this device will
+  /// still take, so "connect another one" is a known option rather than
+  /// something to find out by trying.
+  static String _connectedSubtitle(ConnectionController connection) {
+    final int count = connection.connectedCount;
+    final String base = count > 1
+        ? 'Connected to $count devices. Send files to this one, or wait to '
+            'receive.'
+        : 'This session is trusted. Send files, or wait to receive them.';
+    final int free = connection.freeSlots;
+    if (free <= 0) return base;
+    return '$base You can still connect to '
+        '$free more ${free == 1 ? 'device' : 'devices'}.';
   }
 
   Widget _title(BuildContext context, String text) => Text(

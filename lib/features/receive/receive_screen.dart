@@ -33,7 +33,8 @@ class ReceiveScreen extends StatelessWidget {
         context.watch<ConnectionController>();
 
     final bool offline = discovery.network == NetworkState.offline;
-    final bool connected = connection.isConnected;
+    final List<PeerLink> connected = connection.connectedLinks;
+    final int connectedCount = connected.length;
     final String deviceName =
         settings.deviceName.isEmpty ? 'This device' : settings.deviceName;
 
@@ -66,7 +67,7 @@ class ReceiveScreen extends StatelessWidget {
                                 // Swaps to a link the moment a device is on
                                 // the other end, so the centre always shows
                                 // the current state rather than a fixed label.
-                                icon: connected
+                                icon: connectedCount > 0
                                     ? Icons.link_rounded
                                     : Icons.download_rounded,
                                 size: 88,
@@ -80,7 +81,10 @@ class ReceiveScreen extends StatelessWidget {
                         FadeSlideIn(
                           index: 1,
                           child: Text(
-                            _title(offline: offline, connected: connected),
+                            _title(
+                              offline: offline,
+                              connected: connectedCount > 0,
+                            ),
                             textAlign: TextAlign.center,
                             style: context.text.headlineMedium,
                           ),
@@ -91,8 +95,14 @@ class ReceiveScreen extends StatelessWidget {
                           child: Text(
                             _subtitle(
                               offline: offline,
-                              connected: connected,
-                              peerName: connection.peer?.name,
+                              connectedCount: connectedCount,
+                              // The name of the one device that is up, not
+                              // whichever link the send screen happens to be
+                              // pointed at - those are the same thing only
+                              // until a second device joins.
+                              peerName: connectedCount == 1
+                                  ? connected.first.name
+                                  : null,
                             ),
                             textAlign: TextAlign.center,
                             style: context.text.bodyLarge?.copyWith(
@@ -108,13 +118,16 @@ class ReceiveScreen extends StatelessWidget {
                             child: StatusPill(
                               label: offline
                                   ? 'No local network'
-                                  : 'Visible as $deviceName',
+                                  : connectedCount > 1
+                                      ? '$deviceName - $connectedCount '
+                                          'devices connected'
+                                      : 'Visible as $deviceName',
                               tone: offline
                                   ? StatusTone.warning
-                                  : (connected
+                                  : (connectedCount > 0
                                       ? StatusTone.positive
                                       : StatusTone.working),
-                              pulse: !offline && !connected,
+                              pulse: !offline && connectedCount == 0,
                             ),
                           ),
                         ),
@@ -129,7 +142,7 @@ class ReceiveScreen extends StatelessWidget {
                               onPressed: discovery.retry,
                             ),
                           )
-                        else if (!connected)
+                        else if (connectedCount == 0)
                           FadeSlideIn(
                             index: 4,
                             child: _Steps(deviceName: deviceName),
@@ -161,16 +174,23 @@ class ReceiveScreen extends StatelessWidget {
     return 'Ready to receive';
   }
 
+  /// Any of the connected devices can send, so with more than one the screen
+  /// says how many rather than naming one of them and quietly implying the
+  /// others went away.
   static String _subtitle({
     required bool offline,
-    required bool connected,
+    required int connectedCount,
     String? peerName,
   }) {
     if (offline) {
       return 'Join a Wi-Fi network or a phone hotspot. HozaSend does not need '
           'internet, only the same network as the other device.';
     }
-    if (connected) {
+    if (connectedCount > 1) {
+      return 'Waiting for any of $connectedCount connected devices to send. '
+          'You will be asked before anything is saved.';
+    }
+    if (connectedCount == 1) {
       return 'Waiting for ${peerName ?? 'the other device'} to send. You will '
           'be asked before anything is saved.';
     }

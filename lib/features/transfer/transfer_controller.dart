@@ -38,11 +38,30 @@ class PendingOffer {
   }
 }
 
+/// One connected device, with the receiver listening on its session.
+class _BoundPeer {
+  _BoundPeer({
+    required this.link,
+    required this.session,
+    required this.receiver,
+  });
+
+  final PeerLink link;
+  final HozaSession session;
+  final TransferReceiver receiver;
+}
+
 /// The UI-facing half of transferring.
 ///
-/// Holds one transfer at a time, in either direction. A receiver is attached to
-/// the session as soon as one exists, because an incoming transfer can start
-/// without this user doing anything.
+/// Holds one transfer at a time, in either direction, but listens on *every*
+/// connected device: files can start arriving from any of them without this
+/// user pressing anything, and a receiver attached to only one peer would
+/// leave the others unable to send at all.
+///
+/// One at a time is deliberate. Two transfers sharing a phone's disk and radio
+/// finish later than the same two run back to back, and a progress screen that
+/// has to describe both is a screen nobody can read. A second offer arriving
+/// mid-transfer is declined politely rather than queued.
 class TransferController extends ChangeNotifier {
   TransferController(this._connection, this._settings, this._history) {
     _connection.addListener(_onConnectionChanged);
@@ -57,10 +76,21 @@ class TransferController extends ChangeNotifier {
   final SettingsController _settings;
   final HistoryController _history;
 
-  HozaSession? _boundSession;
+  /// Every connected device, keyed by link id.
+  final Map<String, _BoundPeer> _peers = <String, _BoundPeer>{};
+
   TransferSender? _sender;
-  TransferReceiver? _receiver;
+
+  /// The peer whose transfer is on screen, so Cancel knows what to stop and a
+  /// dropped session knows whether it took a live transfer down with it.
+  String? _activePeerId;
+
   PendingOffer? _offer;
+
+  /// Which peer the pending offer came from, so a session dropping while the
+  /// prompt is up clears that prompt and no other.
+  String? _offerPeerId;
+
   Timer? _promptTimer;
 
   TransferDirection? _direction;
@@ -99,16 +129,18 @@ class TransferController extends ChangeNotifier {
       _lastSent.isNotEmpty &&
       _connection.isConnected;
 
-  /// Sends [files] over the live session. Returns when the transfer has
-  /// finished, one way or another.
+  /// Sends [files] to the device the send screen is pointed at. Returns when
+  /// the transfer has finished, one way or another.
   Future<void> send(List<TransferFile> files) async {
+    final PeerLink? link = _connection.active;
     final HozaSession? session = _connection.session;
-    if (session == null || files.isEmpty || isActive) return;
+    if (link == null || session == null || files.isEmpty || isActive) return;
 
     _lastSent = List<TransferFile>.unmodifiable(files);
     _direction = TransferDirection.send;
     _files = _lastSent;
-    _deviceName = _connection.peer?.name;
+    _deviceName = link.device.name;
+    _activePeerId = link.id;
     _startedAt = DateTime.now();
     _error = null;
     _status = TransferStatus.awaitingApproval;
@@ -133,6 +165,7 @@ class TransferController extends ChangeNotifier {
       _applyFailure(HozaError.from(error));
     } finally {
       _sender = null;
+      _activePeerId = null;
       _record();
       notifyListeners();
     }
@@ -152,7 +185,8 @@ class TransferController extends ChangeNotifier {
     if (!isActive) return;
     Log.info('Transfer', 'Cancelled by this user');
     _sender?.cancel();
-    _receiver?.cancel();
+    final String? id = _activePeerId;
+    if (id != null) _peers[id]?.receiver.cancel();
   }
 
   /// Clears a finished transfer so the screen can close.
@@ -165,6 +199,7 @@ class TransferController extends ChangeNotifier {
     _error = null;
     _deviceName = null;
     _startedAt = null;
+    _activePeerId = null;
     notifyListeners();
   }
 
@@ -172,37 +207,88 @@ class TransferController extends ChangeNotifier {
   void dispose() {
     _promptTimer?.cancel();
     _connection.removeListener(_onConnectionChanged);
-    _receiver?.dispose();
+    for (final _BoundPeer peer in _peers.values) {
+      peer.receiver.dispose();
+    }
+    _peers.clear();
     super.dispose();
   }
 
+  /// Keeps one receiver attached to every connected device, adding and
+  /// dropping them as links come and go.
   void _onConnectionChanged() {
-    final HozaSession? session = _connection.session;
-    if (identical(session, _boundSession)) return;
+    final List<PeerLink> connected = _connection.connectedLinks;
+    final Map<String, PeerLink> byId = <String, PeerLink>{
+      for (final PeerLink link in connected) link.id: link,
+    };
 
-    _receiver?.dispose();
-    _receiver = null;
-    // A prompt for a session that no longer exists has nothing to answer.
-    _offer?.reject();
-    _boundSession = session;
-    if (session == null) {
-      notifyListeners();
-      return;
+    bool changed = false;
+
+    for (final String id in _peers.keys.toList()) {
+      final _BoundPeer bound = _peers[id]!;
+      final PeerLink? link = byId[id];
+      // A link that reconnected carries a different session, so its receiver
+      // is stale even though the row on screen looks unchanged.
+      if (link != null && identical(link.session, bound.session)) continue;
+
+      _peers.remove(id);
+      bound.receiver.dispose();
+      changed = true;
+      _onPeerLost(id, bound);
     }
 
-    _receiver = TransferReceiver(
-      session,
-      downloadPath: _settings.downloadPath ?? '',
-      confirm: _confirmOffer,
-      onProgress: _onProgress,
-      onStarted: _onReceiveStarted,
-      onFinished: _onReceiveFinished,
-    );
+    for (final PeerLink link in connected) {
+      final HozaSession? session = link.session;
+      if (session == null || _peers.containsKey(link.id)) continue;
+
+      _peers[link.id] = _BoundPeer(
+        link: link,
+        session: session,
+        receiver: TransferReceiver(
+          session,
+          downloadPath: _settings.downloadPath ?? '',
+          confirm: (List<TransferFile> files) => _confirmOffer(link, files),
+          onProgress: _onProgress,
+          onStarted: (String id, List<TransferFile> files) =>
+              _onReceiveStarted(link, files),
+          onFinished: _onReceiveFinished,
+        ),
+      );
+      changed = true;
+    }
+
+    if (changed) notifyListeners();
+  }
+
+  /// A device went away. Anything of its that was still on screen has to be
+  /// resolved here, or the user is left watching a progress bar or a prompt
+  /// belonging to a connection that no longer exists.
+  void _onPeerLost(String id, _BoundPeer bound) {
+    if (_offerPeerId == id) {
+      _offer?.reject();
+      _offerPeerId = null;
+    }
+    if (_activePeerId != id || !isActive || isSending) return;
+    Log.warn('Transfer', 'Lost ${bound.link.name} mid-transfer');
+    _activePeerId = null;
+    _applyFailure(HozaError.lost);
+    _record();
   }
 
   /// Raises the incoming prompt, or takes the files straight away when the user
   /// has turned auto-accept on.
-  Future<bool> _confirmOffer(List<TransferFile> files) {
+  Future<bool> _confirmOffer(PeerLink link, List<TransferFile> files) {
+    // One transfer at a time. Saying no here is what makes that visible on the
+    // other device, instead of its offer sitting unanswered until it times
+    // out.
+    if (isActive || _offer != null) {
+      Log.info(
+        'Transfer',
+        'Declining ${files.length} file(s) from ${link.name}: already busy',
+      );
+      return Future<bool>.value(false);
+    }
+
     if (_settings.settings.autoAccept) {
       Log.info('Transfer', 'Auto-accepting ${files.length} file(s)');
       return Future<bool>.value(true);
@@ -212,9 +298,10 @@ class TransferController extends ChangeNotifier {
     final PendingOffer offer = PendingOffer(
       decision,
       files: files,
-      deviceName: _connection.peer?.name ?? 'A nearby device',
+      deviceName: link.device.name,
     );
     _offer = offer;
+    _offerPeerId = link.id;
     notifyListeners();
 
     if (_settings.settings.notificationsEnabled) {
@@ -238,6 +325,7 @@ class TransferController extends ChangeNotifier {
       unawaited(NotificationService.clearIncoming());
       if (!identical(_offer, offer)) return;
       _offer = null;
+      _offerPeerId = null;
       notifyListeners();
     });
   }
@@ -271,18 +359,25 @@ class TransferController extends ChangeNotifier {
     final int? percent = total <= 0
         ? null
         : ((_progress.bytesTransferred * 100) ~/ total).clamp(0, 100);
+    final String what = _files.length == 1
+        ? _files.first.name
+        : '${_files.length} files';
+    final String who = _deviceName == null
+        ? ''
+        : isSending
+            ? ' to $_deviceName'
+            : ' from $_deviceName';
     _connection.updateSessionProgress(
-      text: isSending
-          ? 'Sending ${_files.length == 1 ? _files.first.name : '${_files.length} files'}'
-          : 'Receiving ${_files.length == 1 ? _files.first.name : '${_files.length} files'}',
+      text: '${isSending ? 'Sending' : 'Receiving'} $what$who',
       percent: percent,
     );
   }
 
-  void _onReceiveStarted(String transferId, List<TransferFile> files) {
+  void _onReceiveStarted(PeerLink link, List<TransferFile> files) {
     _direction = TransferDirection.receive;
     _files = files;
-    _deviceName = _connection.peer?.name;
+    _deviceName = link.device.name;
+    _activePeerId = link.id;
     _startedAt = DateTime.now();
     _error = null;
     _status = TransferStatus.inProgress;
@@ -307,6 +402,7 @@ class TransferController extends ChangeNotifier {
     } else {
       _applyFailure(error);
     }
+    _activePeerId = null;
     _record();
     notifyListeners();
   }

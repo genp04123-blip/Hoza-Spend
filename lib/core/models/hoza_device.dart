@@ -86,6 +86,22 @@ class HozaDevice {
           if (other != address) other,
       ];
 
+  /// True when [other] is this same physical device.
+  ///
+  /// The id settles it when both carry one and they match. Addresses are the
+  /// fallback, for the connect-by-IP case where a placeholder id is invented
+  /// before the real one arrives in the welcome - without it, one device would
+  /// look like two the moment it introduced itself properly.
+  ///
+  /// [operator ==] is not this: it is id-only on purpose, because the device
+  /// list is keyed by id and must not merge rows on a coincidence of address.
+  bool isSameAs(HozaDevice other) {
+    if (id.isNotEmpty && id == other.id) return true;
+    if (address.isEmpty || other.address.isEmpty) return false;
+    return candidateAddresses.contains(other.address) ||
+        other.candidateAddresses.contains(address);
+  }
+
   /// Beacon payload. Deliberately small; it goes out every two seconds.
   Map<String, Object?> toBeacon() => <String, Object?>{
         'id': id,

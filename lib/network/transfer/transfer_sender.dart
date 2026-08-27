@@ -214,7 +214,14 @@ class TransferSender {
         _acceptOffer();
 
       case ControlType.offerReject:
-        _failOffer(HozaError.declined);
+        // "Busy" is not "no". The receiver is connected to more than one
+        // device and one of the others got there first, and telling this user
+        // their transfer was declined would blame a person for a queue.
+        _failOffer(
+          message.reason == 'busy'
+              ? HozaError.deviceTransferring
+              : HozaError.declined,
+        );
 
       case ControlType.cancel:
         _cancelled = true;

@@ -19,9 +19,18 @@ import 'device_tile.dart';
 /// Four states, each designed rather than defaulted: no network, scanning,
 /// scanned but empty, and a live list.
 class NearbyDevices extends StatelessWidget {
-  const NearbyDevices({super.key, required this.onSelect});
+  const NearbyDevices({
+    super.key,
+    required this.onSelect,
+    this.markTarget = false,
+  });
 
   final ValueChanged<HozaDevice> onSelect;
+
+  /// Marks the one connected device the send screen is aimed at, rather than
+  /// showing every live link identically. Only the send screen has a target,
+  /// so only the send screen turns this on.
+  final bool markTarget;
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +80,25 @@ class NearbyDevices extends StatelessWidget {
       );
     }
 
-    final List<HozaDevice> devices = discovery.devices;
+    // Discovery beacons say what a device is offering, not what it is doing
+    // with this one. The live sessions are the connection's to know, so the
+    // rows for the devices we are actually talking to are marked here - and
+    // those are the only rows that get a way to hang up.
+    final ConnectionController connection =
+        context.watch<ConnectionController>();
+
+    final List<HozaDevice> devices = <HozaDevice>[...discovery.devices];
+
+    // A device we hold a session with belongs on this list whether or not its
+    // beacons are arriving. Connect by IP never produces one, and a phone that
+    // drops off multicast keeps its socket open long after it stops being
+    // announced - and in both cases the row carrying Disconnect is the last
+    // thing that should quietly disappear.
+    for (final PeerLink link in connection.links) {
+      if (!link.isBusy) continue;
+      if (devices.any((HozaDevice d) => d.isSameAs(link.device))) continue;
+      devices.add(link.device);
+    }
 
     if (devices.isEmpty) {
       if (discovery.isSearching ||
@@ -89,14 +116,6 @@ class NearbyDevices extends StatelessWidget {
       );
     }
 
-    // Discovery beacons say what a device is offering, not what it is doing
-    // with this one. The live session is the connection's to know, so the row
-    // for the device we are actually talking to is marked here - and that is
-    // the only row that gets a way to hang up.
-    final ConnectionController connection =
-        context.watch<ConnectionController>();
-    final HozaDevice? peer = connection.isConnected ? connection.peer : null;
-
     return Column(
       key: const ValueKey<String>('devices'),
       children: <Widget>[
@@ -110,33 +129,43 @@ class NearbyDevices extends StatelessWidget {
               // others appear and disappear around it.
               key: ValueKey<String>(devices[i].id),
               index: i,
-              child: _tile(devices[i], peer, connection),
+              child: _tile(devices[i], connection),
             ),
           ),
       ],
     );
   }
 
-  Widget _tile(
-    HozaDevice device,
-    HozaDevice? peer,
-    ConnectionController connection,
-  ) {
+  Widget _tile(HozaDevice device, ConnectionController connection) {
     // Matched on address as well as id: a session this device accepted was
     // built from the socket, and its id need not be the one the beacon
     // advertised. Every address the device is known at counts, because a
     // phone on two networks answers discovery on one and the connection on
     // the other, and matching only the listed address would leave the live
     // link looking like an idle row.
-    final bool live = peer != null &&
-        (peer.id == device.id ||
-            device.candidateAddresses.contains(peer.address));
-    if (!live) return DeviceTile(device: device, onTap: () => onSelect(device));
+    final PeerLink? link = connection.linkFor(device);
 
+    if (link == null) {
+      return DeviceTile(device: device, onTap: () => onSelect(device));
+    }
+
+    // On its way up. Said on the row rather than only inside the sheet, so
+    // starting a second connection does not make the first one look idle.
+    if (!link.isConnected) {
+      return DeviceTile(
+        device: device.copyWith(status: DeviceStatus.connecting),
+        onTap: () => onSelect(device),
+      );
+    }
+
+    final bool isTarget = markTarget && identical(connection.active, link);
     return DeviceTile(
       device: device.copyWith(status: DeviceStatus.connected),
+      statusLabel: isTarget ? 'Sending to' : null,
       onTap: () => onSelect(device),
-      onDisconnect: connection.disconnect,
+      // Per link, not "the" link: hanging up on one device has to leave the
+      // others exactly where they were.
+      onDisconnect: () => connection.disconnectLink(link),
     );
   }
 }
