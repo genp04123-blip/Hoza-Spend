@@ -61,10 +61,12 @@ sweeping for devices. Same codebase, same design, laid out for each screen.*
 ## Install
 
 Grab the newest build from the [**Releases**](../../releases/latest) page —
-the `.zip` for Windows, the `.apk` for Android. A macOS `.app` and an iOS
-`.ipa` are **coming soon**; both need a Mac to compile. Step-by-step instructions,
-including the firewall prompt and the SmartScreen and Play Protect warnings,
-are in **[INSTALL.md](INSTALL.md)**.
+the `.zip` for Windows, the `.apk` for Android, a `.zip` for macOS and an
+unsigned `.ipa` for iOS. Every platform is compiled by GitHub Actions on real
+hardware, so no Mac is needed to produce the Apple builds — see
+[**Download a build**](#download-a-build). Step-by-step instructions, including
+the firewall prompt and the SmartScreen and Play Protect warnings, are in
+**[INSTALL.md](INSTALL.md)**.
 
 ### Windows
 
@@ -81,7 +83,7 @@ Install the APK; Android will ask you to allow installs from your browser
 first. HozaSend then asks for notification permission on first launch;
 declining only costs the alerts.
 
-### macOS — coming soon
+### macOS
 
 **The codebase supports macOS.** Not a plan or a maybe: the platform work is
 done and in the repo.
@@ -99,6 +101,19 @@ done and in the repo.
 
 The networking needed no changes at all — it is pure `dart:io`, and every
 plugin in use already ships macOS support.
+
+**On first launch macOS will claim the app is damaged.** It is not. The build
+is ad-hoc signed rather than Developer-ID signed, and macOS quarantines any
+unsigned app that arrived through a browser. Clear the flag once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/HozaSend.app
+```
+
+Right-clicking the app and choosing **Open** offers the same override in a
+dialog. Removing the warning for everyone needs a paid Apple Developer account
+(~$99/yr) for Developer-ID signing and notarisation — that is a credential
+added to the workflow, not a code change.
 
 ### iOS — one blocker to clear first
 
@@ -121,11 +136,12 @@ devices will not find each other until either:
 Everything else on iOS — pairing, transfer, verification, history — is the
 same code that runs everywhere else and needs nothing new.
 
-### Both Apple platforms: what is missing is a build
+### Both Apple platforms: compiled, never run
 
-A macOS `.app` and an iOS `.ipa` can only be compiled on a Mac with Xcode, and
-neither has been. Nothing above is claimed as tested — the Dart analyses clean
-and the Swift has never met a compiler. Releases follow once they have.
+The Apple builds are produced by GitHub Actions on a hosted Mac runner, so a
+real Xcode does compile them. What has *not* happened is anyone launching them:
+nobody has opened the `.app`, paired two devices, or moved a file on macOS. The
+Dart analyses clean and the Swift compiles — neither is the same as working.
 
 If you have a Mac:
 
@@ -151,6 +167,42 @@ To produce the Windows installer (needs [Inno Setup 6](https://jrsoftware.org/is
 ```powershell
 .\installer\build_installer.ps1
 ```
+
+---
+
+## Download a build
+
+Builds come from the **Flutter Release** workflow in
+[`.github/workflows/release.yml`](.github/workflows/release.yml) — Android,
+Windows, macOS and iOS, each on its own runner, all gated behind
+`flutter analyze`. Nothing it produces is committed: `build/` is gitignored, so
+a compiled app never appears in the repo or in your working copy.
+
+**A build to try out** — Actions tab → **Flutter Release** → *Run workflow*.
+When the run finishes, its **Artifacts** sit at the bottom of the run summary:
+
+| Artifact | Contents |
+|---|---|
+| `windows-release` | `HozaSend-windows.zip` |
+| `android-apk` / `android-aab` | `app-release.apk` / `app-release.aab` |
+| `macos-release` | `HozaSend-macos.zip` |
+| `ios-release` | `HozaSend-ios-unsigned.ipa` |
+
+Artifacts expire after 90 days and always download as a zip.
+
+**A build to hand out** — push a version tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The same four platforms build, and are then collected into a **draft** GitHub
+Release with generated notes. Review it on the Releases page and press
+*Publish* when you are ready — nothing is public until you do.
+
+macOS runners bill at ten times the Linux rate, but this repository is public,
+so the minutes cost nothing.
 
 ---
 
