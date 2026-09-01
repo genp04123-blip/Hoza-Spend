@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — HozaSend</title>
+<meta name="description" content="Privacy policy for HozaSend. The app collects no personal data: no accounts, no servers, no analytics, no tracking.">
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --ink:#12151c; --muted:#5a6373;
+    --line:#e3e7ee; --accent:#1e4ed8; --chip:#eef2ff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0e1116; --card:#161b22; --ink:#e8ecf3; --muted:#9aa4b4;
+           --line:#262d38; --accent:#7fa2ff; --chip:#1b2333; }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  main{max-width:760px; margin:0 auto; padding:48px 20px 80px}
+  header{border-bottom:1px solid var(--line); padding-bottom:24px; margin-bottom:32px}
+  h1{font-size:30px; line-height:1.2; margin:0 0 12px; letter-spacing:-.02em}
+  h2{font-size:19px; margin:38px 0 12px; letter-spacing:-.01em}
+  .meta{color:var(--muted); font-size:14px; margin:0}
+  .meta strong{color:var(--ink); font-weight:600}
+  .lead{background:var(--card); border:1px solid var(--line); border-radius:12px;
+        padding:18px 20px; margin:0 0 8px}
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:15px; display:block; overflow-x:auto}
+  th,td{border:1px solid var(--line); padding:10px 12px; text-align:left; vertical-align:top}
+  th{background:var(--chip); font-weight:600}
+  code{background:var(--chip); padding:2px 6px; border-radius:5px; font-size:14px}
+  a{color:var(--accent)}
+  footer{margin-top:48px; padding-top:20px; border-top:1px solid var(--line);
+         color:var(--muted); font-size:14px}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Privacy Policy — HozaSend</h1>
+    <p class="meta"><strong>Effective date:</strong> 31 August 2026 &nbsp;·&nbsp;
+       <strong>Application:</strong> HozaSend (Windows, Android) &nbsp;·&nbsp;
+       <strong>Publisher:</strong> Rahoz Osman Salim &nbsp;·&nbsp;
+       <strong>Contact:</strong> <a href="mailto:hozahoza2001@gmail.com">hozahoza2001@gmail.com</a></p>
+  </header>
+
+  <p class="lead"><strong>Summary.</strong> HozaSend does not collect, transmit, sell, or share any
+  personal data. It has no accounts, no servers, no analytics, no advertising, and no tracking of any
+  kind. Files you send travel directly from one of your devices to the other over your own local
+  network, and never pass through us or any third party.</p>
+
+  <h2>Information we collect</h2>
+  <p><strong>None.</strong> We operate no servers and receive no data from the app. Nothing you do in
+  HozaSend is reported to us or to anyone else.</p>
+
+  <h2>Information the app handles on your device</h2>
+  <p>All of the following stays on your own devices and on your own local network.</p>
+  <table>
+    <thead><tr><th>Data</th><th>Why it exists</th><th>Where it goes</th></tr></thead>
+    <tbody>
+      <tr><td>Device name and a randomly generated device ID</td>
+          <td>So the other device can show you which device is offering to connect</td>
+          <td>Broadcast on your local network (LAN / Wi-Fi / hotspot) only</td></tr>
+      <tr><td>Local IP address and port</td>
+          <td>Needed to open the direct connection between the two devices</td>
+          <td>Your local network only</td></tr>
+      <tr><td>Six-digit pairing code</td>
+          <td>Shown on both screens so you can confirm the connection</td>
+          <td>Held in memory during pairing</td></tr>
+      <tr><td>Files you choose to send</td>
+          <td>The purpose of the app</td>
+          <td>Sent directly to the receiving device you approved. Received files are saved to your
+              chosen folder (by default <code>Downloads/HozaSend</code>)</td></tr>
+      <tr><td>App settings (theme, notifications, auto-accept, download folder)</td>
+          <td>To remember your preferences</td>
+          <td>Local app storage</td></tr>
+      <tr><td>Transfer history (file names, sizes, dates)</td>
+          <td>So you can see what was sent or received</td>
+          <td>Local app storage. You can clear it in the app</td></tr>
+    </tbody>
+  </table>
+  <p>Uninstalling the app, or clearing its data, removes the settings and history. Files you already
+  received stay in your download folder, where they belong to you.</p>
+
+  <h2>Network use</h2>
+  <p>HozaSend uses your network only to find nearby devices (UDP beacons on the local subnet) and to
+  carry the transfer itself (a direct TCP connection between the two devices). It works with no
+  internet connection at all — a hotspot with nothing behind it is a perfectly good network. The app
+  does not contact any web service, back end, or update server.</p>
+  <p>Because transfers stay on your local network, use HozaSend on networks you trust. Every
+  connection must be confirmed with a matching six-digit code on both screens, every incoming
+  transfer must be accepted, and every file is verified with a SHA-256 checksum before it is given
+  its final name.</p>
+
+  <h2>Permissions</h2>
+  <p><strong>Windows:</strong> local network access, so the app can discover and connect to your
+  other device; access to the folders you pick for sending and receiving.</p>
+  <p><strong>Android:</strong> network and Wi-Fi state and multicast, to discover devices on the
+  local network; local network sockets, to carry the transfer; notifications, to show transfer
+  progress and completion; foreground service and wake lock, to keep a transfer running while the
+  screen is off; storage, to read the files you pick and save the files you receive.</p>
+  <p>None of these permissions are used to collect information about you.</p>
+
+  <h2>Third parties</h2>
+  <p>HozaSend contains no third-party analytics, advertising, or tracking SDKs. It does not share
+  data with third parties, because it does not collect any.</p>
+  <p>If you installed the app from the Microsoft Store or another app store, that store may collect
+  its own data about the download under its own privacy policy. That is between you and the store;
+  we receive nothing from it.</p>
+
+  <h2>Children&rsquo;s privacy</h2>
+  <p>HozaSend is not directed at children and collects no personal information from anyone,
+  including children under 13.</p>
+
+  <h2>Your rights</h2>
+  <p>Since we hold no data about you, there is nothing for us to access, correct, export, or delete
+  on your behalf. The data on your device is under your control at all times, and clearing the
+  app&rsquo;s data or uninstalling it removes it.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If this policy changes, the updated version will be published at this same address with a new
+  effective date.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy: <a href="mailto:hozahoza2001@gmail.com">hozahoza2001@gmail.com</a></p>
+
+  <footer>HozaSend &middot; <a href="https://github.com/rahozosman/Hoza-Send">github.com/rahozosman/Hoza-Send</a></footer>
+</main>
+</body>
+</html>

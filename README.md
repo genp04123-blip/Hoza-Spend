@@ -83,6 +83,12 @@ Install the APK; Android will ask you to allow installs from your browser
 first. HozaSend then asks for notification permission on first launch;
 declining only costs the alerts.
 
+The APK is signed with HozaSend's own release key (v1+v2+v3 schemes), so
+updates install cleanly over each other. Play Protect may still warn, because
+the app did not come from the Play Store — that is about where the file came
+from, not about how it was signed. See
+**[docs/ANDROID-RELEASE.md](docs/ANDROID-RELEASE.md)**.
+
 ### macOS
 
 **The codebase supports macOS.** Not a plan or a maybe: the platform work is
@@ -184,7 +190,7 @@ When the run finishes, its **Artifacts** sit at the bottom of the run summary:
 | Artifact | Contents |
 |---|---|
 | `windows-release` | `HozaSend-windows.zip` |
-| `android-apk` / `android-aab` | `app-release.apk` / `app-release.aab` |
+| `android-apk` / `android-aab` | `HozaSend-<version>.apk` (signed, with `.sha256`) / `.aab` |
 | `macos-release` | `HozaSend-macos.zip` |
 | `ios-release` | `HozaSend-ios-unsigned.ipa` |
 
@@ -238,12 +244,23 @@ receiver  → welcome                    ← "asking the user"
 receiver  → accept | reject
 initiator → offer {files}
 receiver  → offerAccept
-initiator → file {name, size}          ← then exactly `size` raw bytes
+initiator → file {name, size, kind, mtime, rel}
+initiator → chunk {n}                  ← then exactly `n` raw bytes
+initiator → chunk {n}                  ← …repeated to the end of the file
 initiator → fileDone {sha256}          ← checksum as a trailer
 initiator → end
 receiver  → result
+either    ↔ pause / resume             ← at any chunk boundary
 both      ↔ ping / pong every 5s
 ```
+
+**Why the bytes are chunked, not one run of `size`:** because a file sent as one
+unbroken run leaves no moment at which either side may write a control line — so
+the pong owed to the peer's five-second ping lands *inside the file*. That was
+real, and it silently damaged every transfer that lasted longer than five
+seconds, which is to say every large one. Returning to text between chunks gives
+the heartbeat, a cancel and a pause somewhere safe to go. The cost is a ~30-byte
+header per 64 KB, under 0.05%. `test/transfer_test.dart` pins it down.
 
 **Why the checksum is a trailer, not part of the offer:** the file is hashed
 *while* it streams. Reading a 5 GB video twice just to know its digest up front
@@ -255,17 +272,39 @@ session — for nothing.
 
 ### Getting the details right
 
+- **No file type is special.** Every picker is opened for anything the OS will
+  offer, and the engine only ever sees a name, a byte count and something that
+  streams. Documents, archives, installers, audio, video, images and files with
+  no extension at all take exactly the same path.
 - **Backpressure both ways.** The sender flushes every 512 KB; the receiver
   pauses socket reads across each 8 MB disk flush. Never flushing lets a fast
   disk queue a whole file in RAM ahead of a slow network.
-- **Heartbeats pause during file bytes.** A ping written into the middle of a
-  stream would corrupt it. The file bytes are themselves proof of life.
+- **A flush blocks writes.** A Dart socket counts as bound to a stream while its
+  own flush is in flight, so control lines written in that window are held and
+  emitted the instant it resolves — still on a chunk boundary.
+- **The receiver does its file work on one queue.** Messages arrive
+  synchronously from the socket and the work they cause is asynchronous, and
+  `fileDone` for one file arrives in the same read as the `file` header for the
+  next. Without the queue the trailer for one file resolves against the handle
+  of the one after it, and the wrong file is verified and renamed.
 - **Nothing lands looking finished.** Bytes go to a `.hozapart` file; only when
   the byte count *and* the SHA-256 both match is it renamed. Failures delete
   the partial.
-- **Path traversal is blocked.** A filename arrives from another device, so
-  separators, drive letters and traversal segments are stripped before it is
-  used.
+- **A file keeps what it is.** Its name, extension, size and modification time
+  survive the trip, and a file sent from inside a folder is rebuilt inside that
+  folder rather than emptied into the download directory.
+- **Names are sanitised, not mangled.** Separators, drive letters and traversal
+  segments are stripped, Windows device names (`CON`, `LPT1`) are prefixed, and
+  a name too long to store is shortened *through the stem* so the extension
+  survives. A leading dot is kept: `.gitignore` arrives as `.gitignore`.
+- **Pause is flow control, not a teardown.** The sender stops feeding bytes at
+  the next chunk boundary. The socket stays up, the partial file stays put, the
+  digest keeps its state, and both heartbeats keep proving the link is alive.
+- **Android reads picked files where they are.** Every Flutter picker answers a
+  selection by copying the file into the app's cache first — 4 GB of free space
+  and a full copy before a single byte is sent. HozaSend goes to the Storage
+  Access Framework directly and streams the original; the copying picker is
+  kept only as a fallback.
 - **`Downloads/HozaSend` on both.** Windows writes there directly; Android
   streams into app storage, verifies, then publishes through MediaStore —
   scoped storage gives you a stream, not a path.
@@ -302,8 +341,17 @@ Stated plainly, because pretending otherwise wastes your time:
 - **Taskbar pinning cannot be automated.** Microsoft removed the shell verb in
   Windows 10. The installer creates desktop and Start Menu shortcuts; pinning
   is a right-click.
-- **Android's file picker copies large files to cache** before handing them
-  over, so a multi-GB video costs temporary storage while it sends.
+- **iOS copies a picked file before handing it over**, so a multi-GB video
+  costs that much temporary storage while it sends. Its document picker offers
+  no other route; Android's does, and HozaSend takes it. Old copies are cleared
+  at startup, which is the one moment nothing is queued or being read.
+- **iOS cannot send a folder.** Its folder picker returns a security-scoped URL
+  that has to be held open by whoever received it, and the picker plugin does
+  not hold it — so the folder would be chosen and then found empty. Windows,
+  macOS and Android all send folders, structure intact.
+- **Protocol 2 does not talk to protocol 1.** Both devices need this build. The
+  handshake says so plainly rather than letting an older peer corrupt a file,
+  which is what the previous wire format did to anything over five seconds.
 - **Discovery assumes a /24 subnet** for its directed broadcast. Dart exposes
   no interface netmask. The limited broadcast covers everything else.
 - **The macOS build is untested.** The code is there and analyses clean, but it
@@ -316,3 +364,10 @@ Stated plainly, because pretending otherwise wastes your time:
 ## Author
 
 **Rahoz Osman Salim** — [hozahoza2001@gmail.com](mailto:hozahoza2001@gmail.com)
+
+## Privacy
+
+HozaSend collects nothing: no accounts, no servers, no analytics, no tracking.
+The full policy is at
+[rahozosman.github.io/Hoza-Send/privacy-policy.html](https://rahozosman.github.io/Hoza-Send/privacy-policy.html)
+(source: [PRIVACY.md](PRIVACY.md)).
