@@ -1,5 +1,5 @@
 name: hoza_send
-description: "A new Flutter project."
+description: "Send files across your local network, with no internet."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -50,6 +50,7 @@ dependencies:
   flutter_local_notifications: ^22.3.0
   desktop_drop: ^0.8.1
   cross_file: ^0.3.5+5
+  msix: ^3.18.0
 
 # Fans the source artwork out to every platform icon size:
 #   dart run flutter_launcher_icons
@@ -129,3 +130,18 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Microsoft Store packaging (dart run msix:create)
+# identity_name and publisher MUST match Partner Center:
+#   Product management -> Product identity
+#     Package/Identity/Name      -> identity_name
+#     Package/Identity/Publisher -> publisher
+msix_config:
+  display_name: Hoza Send
+  publisher_display_name: rahoz osman
+  identity_name: rahozosman.hozasend
+  publisher: CN=74E58D7B-C8D8-4939-83AF-C2EE41E72A19
+  msix_version: 1.0.0.0
+  logo_path: assets/icon/hoza_icon.png
+  store: true
+  capabilities: internetClient

@@ -110,11 +110,15 @@ class _ChooseFilesCardState extends State<ChooseFilesCard> {
                 ),
                 const SizedBox(height: Insets.xs),
                 Text(
+                  // Named rather than implied. "Photos, videos, documents"
+                  // reads as a list of what is allowed, and people believed
+                  // it - the app has never filtered anything, and the copy was
+                  // the only thing suggesting otherwise.
                   widget.canDrop
-                      ? 'Drag files onto this window, or tap to browse. '
-                          'Photos, videos, documents - as many as you like.'
-                      : 'Photos, videos, documents - anything on this device, '
-                          'and as many as you like.',
+                      ? 'Drag files or folders onto this window, or tap to '
+                          'browse. Any file type, any size, as many as you like.'
+                      : 'Any file type - documents, archives, apps, photos, '
+                          'video, audio - and as many as you like.',
                   textAlign: TextAlign.center,
                   style:
                       context.text.bodySmall?.copyWith(color: c.textSecondary),

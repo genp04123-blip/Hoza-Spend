@@ -8,6 +8,7 @@ import '../../../app/theme/app_theme.dart';
 import '../../../app/theme/app_tokens.dart';
 import '../../../core/models/file_source.dart';
 import '../../../core/models/transfer.dart';
+import '../../../core/services/android_files.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/hoza_card.dart';
 
@@ -33,7 +34,10 @@ class FileCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  file.name,
+                  // Its place in the folder it came from, where it has one.
+                  // Two files called `notes.txt` from two different folders
+                  // are otherwise the same row twice.
+                  file.displayName,
                   style: context.text.titleSmall,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -61,22 +65,33 @@ class FileCard extends StatelessWidget {
   }
 }
 
-/// A real preview for images, otherwise a tinted kind icon.
+/// A real preview where one is cheap, otherwise a tinted kind icon.
 ///
-/// Two routes, because the two platforms hand back different things. Desktop
-/// gives a path, so `Image.file` decodes straight from disk at thumbnail size.
-/// Android gives a storage-access URI with no path, so the bytes have to be
-/// read through the picker - which is only acceptable because it is capped at
-/// [maxPreviewBytes] and the result is decoded down immediately.
+/// Three routes, because the platforms hand back different things.
 ///
-/// Video thumbnails would need a decoder plugin on both platforms; the kind
-/// icon is the honest alternative for now.
+/// Where there is a path - the desktops, and iOS, whose picker copies the file
+/// into the app first - `Image.file` decodes straight from disk at thumbnail
+/// size, and nothing is read that is not drawn.
+///
+/// Android has a storage-access URI and no path, and asks the provider for a
+/// preview it has already made. That is about ten kilobytes, and it covers
+/// video as well as stills. Reading the file instead would mean pulling a 6 MB
+/// photo across the platform channel for a 46-pixel square, once per card, on
+/// a screen that can hold a hundred of them.
+///
+/// A file with no cheap preview gets its kind icon, which is an answer rather
+/// than a failure.
 class FileThumbnail extends StatefulWidget {
   const FileThumbnail({super.key, required this.file, this.size = 46});
 
-  /// Images larger than this get an icon instead. A preview is never worth
-  /// pulling many megabytes into memory for.
+  /// Images larger than this get an icon instead, where a preview means
+  /// reading the file. A preview is never worth pulling many megabytes into
+  /// memory for.
   static const int maxPreviewBytes = 6 * 1024 * 1024;
+
+  /// What to ask a provider for. Comfortably above the card at any density,
+  /// and small enough that a hundred of them are still a rounding error.
+  static const int providerPreviewPixels = 256;
 
   final TransferFile file;
   final double size;
@@ -88,12 +103,26 @@ class FileThumbnail extends StatefulWidget {
 class _FileThumbnailState extends State<FileThumbnail> {
   /// Held in state rather than built in `build`, so a rebuild does not re-read
   /// the file every time the list scrolls or the theme changes.
-  Future<Uint8List>? _bytes;
+  Future<Uint8List?>? _bytes;
 
   @override
   void initState() {
     super.initState();
     final FileSource? source = widget.file.source;
+
+    if (source is AndroidUriSource) {
+      // Still and moving alike: the provider makes both, and neither costs
+      // more than the preview itself.
+      if (widget.file.kind == FileKind.image ||
+          widget.file.kind == FileKind.video) {
+        _bytes = AndroidFiles.thumbnail(
+          source.uri,
+          FileThumbnail.providerPreviewPixels,
+        );
+      }
+      return;
+    }
+
     if (!_isPreviewable || source == null || source.path != null) return;
     _bytes = source.readAsBytes();
   }
@@ -126,14 +155,14 @@ class _FileThumbnailState extends State<FileThumbnail> {
       child: Icon(_icon, size: 20, color: c.primary),
     );
 
-    if (!_isPreviewable) return fallback;
+    if (!_isPreviewable && _bytes == null) return fallback;
 
     final int cacheWidth =
         (size * MediaQuery.devicePixelRatioOf(context)).round();
     final String? path = widget.file.source?.path;
 
     final Widget image;
-    if (path != null) {
+    if (path != null && _isPreviewable) {
       image = Image.file(
         File(path),
         width: size,
@@ -145,9 +174,9 @@ class _FileThumbnailState extends State<FileThumbnail> {
             (BuildContext context, Object error, StackTrace? stack) => fallback,
       );
     } else if (_bytes != null) {
-      image = FutureBuilder<Uint8List>(
+      image = FutureBuilder<Uint8List?>(
         future: _bytes,
-        builder: (BuildContext context, AsyncSnapshot<Uint8List> snapshot) {
+        builder: (BuildContext context, AsyncSnapshot<Uint8List?> snapshot) {
           final Uint8List? data = snapshot.data;
           if (data == null) return fallback;
           return Image.memory(

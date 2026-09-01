@@ -97,22 +97,105 @@ class StorageService {
     return directory;
   }
 
+  /// What a file is called when nothing usable survived sanitising.
+  static const String fallbackName = 'received_file';
+
+  /// Windows caps a path component at 255. The rest is room for the " (12)"
+  /// a duplicate gets and the `.hozapart` a partial file wears.
+  static const int _maxNameLength = 240;
+
+  /// Beyond this, an "extension" is not one - it is the tail of a name that
+  /// happens to contain a dot, and keeping it would waste the whole budget.
+  static const int _maxExtensionLength = 24;
+
+  /// How deep a folder a sender may recreate here.
+  ///
+  /// Real folders are a handful of levels; anything past this is either a
+  /// mistake or an attempt to push a path past what the filesystem will take.
+  static const int _maxDepth = 16;
+
+  /// Names Windows refuses, in any directory, with or without an extension.
+  ///
+  /// `con.txt` is a perfectly ordinary file on a Mac or a phone and cannot be
+  /// created on Windows at all. Renaming it is the only way the transfer
+  /// succeeds; the alternative is a file that always fails to arrive.
+  static const Set<String> _reservedNames = <String>{
+    'con', 'prn', 'aux', 'nul',
+    'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+    'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
+  };
+
   /// Strips everything from a received filename except the name itself.
   ///
   /// This is a security boundary, not tidiness. The name arrives from another
   /// device, and a peer that sent `../../../autorun.inf` would otherwise get a
   /// write outside the download folder. Separators, drive letters, traversal
   /// segments and control characters all go.
+  ///
+  /// What does *not* go is anything the user would notice losing. A leading
+  /// dot is kept, so `.gitignore` and `.env` arrive under their own names
+  /// rather than as `gitignore` and `env`. The extension is kept when a very
+  /// long name has to be shortened, because a `.docx` that arrives with no
+  /// extension is a file the receiving device no longer knows how to open.
   static String safeFileName(String name) {
     // Take the last segment under either separator, so neither a Windows nor a
     // POSIX path survives.
     String cleaned = name.split(RegExp(r'[\\/]')).last;
     cleaned = cleaned.replaceAll(RegExp(r'[\x00-\x1F<>:"|?*]'), '_');
-    cleaned = cleaned.replaceAll(RegExp(r'^\.+'), '');
-    cleaned = cleaned.trim();
-    if (cleaned.isEmpty) return 'received_file';
-    // Windows caps a path component at 255; leave room for the " (12)" suffix.
-    return cleaned.length <= 240 ? cleaned : cleaned.substring(0, 240);
+    // Windows silently drops trailing dots and spaces from a name, which would
+    // leave the file on disk called something other than what was checked for
+    // collisions. Dropping them here keeps the two in agreement - and it is
+    // also what turns `.` and `..` into nothing at all.
+    cleaned = _trimEdges(cleaned);
+    if (cleaned.isEmpty) return fallbackName;
+
+    // Windows matches a reserved device name on the part before the first dot,
+    // so `con`, `con.txt` and `con.tar.gz` are all refused.
+    if (_reservedNames.contains(cleaned.split('.').first.toLowerCase())) {
+      cleaned = '_$cleaned';
+    }
+
+    if (cleaned.length <= _maxNameLength) return cleaned;
+
+    final String extension = p.extension(cleaned);
+    final String keep =
+        extension.length <= _maxExtensionLength ? extension : '';
+    final String stem =
+        _trimEdges(cleaned.substring(0, _maxNameLength - keep.length));
+    return stem.isEmpty ? fallbackName : '$stem$keep';
+  }
+
+  /// Trailing dots and spaces, and a name that is nothing else.
+  static String _trimEdges(String value) =>
+      value.replaceAll(RegExp(r'[ .]+$'), '').trim();
+
+  /// The folder part of a relative path from another device, sanitised.
+  ///
+  /// [relativePath] is the whole path the sender used, file name included -
+  /// `photos/2026/trip.jpg` - and what comes back is `photos/2026`, ready to
+  /// be joined onto the download folder. The file's own name is applied
+  /// separately by [uniquePath], which is what makes a duplicate inside a
+  /// received folder behave like a duplicate anywhere else.
+  ///
+  /// Every segment goes through [safeFileName], and `.` and `..` are dropped
+  /// outright, so no path from a peer can name anything above the download
+  /// folder however it is spelled. Empty when there is no folder to rebuild.
+  static String safeSubDirectory(String? relativePath) {
+    if (relativePath == null || relativePath.isEmpty) return '';
+
+    final List<String> raw = relativePath.split(RegExp(r'[\\/]'));
+    // The last segment is the file itself.
+    final List<String> folders = raw.sublist(0, raw.length - 1);
+
+    final List<String> segments = <String>[];
+    for (final String segment in folders) {
+      if (segment.isEmpty || segment == '.' || segment == '..') continue;
+      final String safe = safeFileName(segment);
+      if (safe.isEmpty) continue;
+      segments.add(safe);
+      if (segments.length == _maxDepth) break;
+    }
+    return segments.join(p.separator);
   }
 
   /// A path inside [directory] that nothing occupies yet.
@@ -121,8 +204,13 @@ class StorageService {
   /// rather than silently destroying the first one.
   static Future<String> uniquePath(Directory directory, String name) async {
     final String safe = safeFileName(name);
-    final String stem = p.basenameWithoutExtension(safe);
+    // Split the way the name reads rather than the way `package:path` does:
+    // for `.gitignore` there is no extension, and treating the whole name as
+    // one would produce ` (1).gitignore` for the second copy.
     final String extension = p.extension(safe);
+    final String stem = extension.isEmpty
+        ? safe
+        : safe.substring(0, safe.length - extension.length);
 
     String candidate = p.join(directory.path, safe);
     int counter = 1;

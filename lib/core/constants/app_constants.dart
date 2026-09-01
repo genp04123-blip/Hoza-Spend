@@ -20,7 +20,12 @@ class AppConstants {
 
   /// Wire-format version. Bump when the beacon or transfer protocol changes in
   /// a way an older build cannot read; the handshake refuses a mismatch.
-  static const int protocolVersion = 1;
+  ///
+  /// 2: file bytes are carried in length-prefixed chunks rather than as one
+  /// unbroken run of `size` bytes. Version 1 could not survive its own
+  /// heartbeat - a pong written while a file was streaming landed inside the
+  /// file - and had no safe moment to carry a cancel or a pause either.
+  static const int protocolVersion = 2;
 
   /// UDP port for discovery beacons, broadcast across the local subnet.
   static const int discoveryPort = 47820;
@@ -50,7 +55,20 @@ class AppConstants {
 
   /// Bytes moved from disk to socket per chunk. Files are streamed; a file is
   /// never read into memory whole, however small it looks.
+  ///
+  /// It is also the frame size on the wire, and so the granularity at which a
+  /// transfer can be paused or cancelled: the receiver returns to reading
+  /// control lines after every chunk. Larger frames would shave an already
+  /// negligible overhead (a ~30 byte header per 64 KB, under 0.05%) at the
+  /// cost of making both of those coarser.
   static const int chunkSize = 64 * 1024;
+
+  /// The most a peer may claim a single chunk holds.
+  ///
+  /// A frame header arrives over an open port, and the receiver allocates
+  /// against it. Generous next to [chunkSize] so a future build may use larger
+  /// frames, small enough that a hostile header cannot ask for a gigabyte.
+  static const int maxChunkSize = 8 * 1024 * 1024;
 
   /// How often transfer progress is pushed to the UI. Throttled so a fast
   /// transfer cannot flood the widget tree with rebuilds.

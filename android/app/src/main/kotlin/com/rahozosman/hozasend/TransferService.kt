@@ -1,4 +1,4 @@
-package com.example.hoza_send
+package com.rahozosman.hozasend
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -154,7 +154,7 @@ class TransferService : Service() {
     }
 
     companion object {
-        const val ACTION_STOP = "com.example.hoza_send.STOP_SESSION"
+        const val ACTION_STOP = "com.rahozosman.hozasend.STOP_SESSION"
         const val EXTRA_TITLE = "title"
         const val EXTRA_TEXT = "text"
         const val EXTRA_PROGRESS = "progress"

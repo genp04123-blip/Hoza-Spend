@@ -279,12 +279,22 @@ class _Stats extends StatelessWidget {
               '${Formatters.bytes(progress.totalBytes)}',
               style: meta,
             ),
-            Text(Formatters.speed(progress.bytesPerSecond), style: meta),
+            Text(
+              progress.isPaused
+                  ? 'Paused'
+                  : Formatters.speed(progress.bytesPerSecond),
+              style: meta,
+            ),
           ],
         ),
         const SizedBox(height: Insets.sm),
         Text(
-          Formatters.eta(progress.remaining),
+          // A held transfer has no estimate worth showing: the wait is a
+          // decision, and counting it down as though the network had slowed
+          // would be inventing a number.
+          progress.isPaused
+              ? 'Waiting to continue'
+              : Formatters.eta(progress.remaining),
           style: context.text.bodySmall?.copyWith(color: c.textTertiary),
         ),
         if (progress.filesTotal > 1) ...<Widget>[
@@ -443,10 +453,29 @@ class _Actions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (transfer.isActive) {
-      return HozaSecondaryButton(
-        label: 'Cancel',
-        icon: Icons.close_rounded,
-        onPressed: transfer.cancel,
+      final bool paused = transfer.isPaused;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // Offered only once bytes are moving. While the other device is
+          // still deciding whether to accept there is nothing to hold, and a
+          // button that does nothing is worse than no button.
+          if (transfer.canPause || paused) ...<Widget>[
+            HozaSecondaryButton(
+              label: paused ? 'Resume' : 'Pause',
+              icon: paused
+                  ? Icons.play_arrow_rounded
+                  : Icons.pause_rounded,
+              onPressed: paused ? transfer.resume : transfer.pause,
+            ),
+            const SizedBox(height: Insets.md),
+          ],
+          HozaSecondaryButton(
+            label: 'Cancel',
+            icon: Icons.close_rounded,
+            onPressed: transfer.cancel,
+          ),
+        ],
       );
     }
 

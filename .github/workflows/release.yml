@@ -53,8 +53,55 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
 
+      # AGP 9 / Gradle 9 need a JDK 17 or newer. The Ubuntu image ships one,
+      # but pinning it here means an image refresh cannot quietly change the
+      # bytecode the release is built with.
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Flutter Pub Get
         run: flutter pub get
+
+      # The keystore never lives in the repository. It reaches CI as a
+      # base64 secret, is written to a path outside the checkout, and is
+      # shredded again below. See docs/ANDROID-RELEASE.md for how to produce
+      # the secret values.
+      #
+      # If the secrets are absent the job stops here rather than carrying on:
+      # the Gradle config refuses to fall back to the debug key, and an
+      # unsigned or debug-signed release is not something to publish by
+      # accident.
+      - name: Restore release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set."
+            echo "Add the four ANDROID_* repository secrets described in"
+            echo "docs/ANDROID-RELEASE.md. This build will not fall back to the"
+            echo "debug signing key: the debug key is public, so anything signed"
+            echo "with it can be replaced by anyone."
+            exit 1
+          fi
+          KEYSTORE_PATH="$RUNNER_TEMP/hozasend-release.jks"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          # Fail loudly on a truncated or mis-pasted secret, rather than 200
+          # lines later inside Gradle.
+          keytool -list -keystore "$KEYSTORE_PATH" \
+                  -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          cat > android/key.properties <<EOF
+          storeFile=$KEYSTORE_PATH
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          echo "Keystore restored to $KEYSTORE_PATH"
 
       - name: Build APK
         run: flutter build apk --release
@@ -62,17 +109,72 @@ jobs:
       - name: Build AAB
         run: flutter build appbundle --release
 
+      # The point of signing is lost if nobody ever checks the result. This
+      # fails the build on a debug certificate, a missing signature scheme, or
+      # a placeholder application id.
+      - name: Verify APK signature
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          APK=build/app/outputs/flutter-apk/app-release.apk
+
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee /tmp/verify.txt
+
+          for scheme in v1 v2 v3; do
+            grep -qi "Verified using $scheme scheme (.*): true" /tmp/verify.txt \
+              || { echo "::error::APK is not signed with the $scheme scheme."; exit 1; }
+          done
+
+          if grep -q "CN=Android Debug" /tmp/verify.txt; then
+            echo "::error::APK is signed with the Android debug key."
+            exit 1
+          fi
+
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -E "^package:|^application-label:"
+
+          # An `if`, not `cmd && { exit 1; }`: the step's exit status is that of
+          # its last command, so a trailing && would fail the job in exactly the
+          # case where the grep finds nothing - which is the case we want.
+          if "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -q "package: name='com.example"; then
+            echo "::error::application id is still a com.example placeholder."
+            exit 1
+          fi
+
+          echo "APK signature verified."
+
+      # A version in the filename, so a Releases page does not offer three
+      # different downloads all called app-release.apk.
+      - name: Name the artifacts
+        id: names
+        run: |
+          VERSION=$(grep -m1 '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/HozaSend-$VERSION.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "dist/HozaSend-$VERSION.aab"
+          sha256sum "dist/HozaSend-$VERSION.apk" | tee "dist/HozaSend-$VERSION.apk.sha256"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # Runners are torn down after a job, but a keystore is not something to
+      # leave lying around on the strength of that alone.
+      - name: Shred the keystore
+        if: always()
+        run: |
+          shred -u "$RUNNER_TEMP/hozasend-release.jks" 2>/dev/null || true
+          rm -f android/key.properties
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: |
+            dist/HozaSend-${{ steps.names.outputs.version }}.apk
+            dist/HozaSend-${{ steps.names.outputs.version }}.apk.sha256
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: android-aab
-          path: build/app/outputs/bundle/release/app-release.aab
+          path: dist/HozaSend-${{ steps.names.outputs.version }}.aab
 
 
   windows:

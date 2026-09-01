@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'app/app.dart';
+import 'core/services/file_picker_service.dart';
 import 'core/services/share_intake_service.dart';
 import 'data/local/history_repository.dart';
 import 'core/services/notification_service.dart';
@@ -28,6 +31,13 @@ Future<void> main(List<String> arguments) async {
   // Asks for the notification permission on Android 13+. Declining costs only
   // the alerts, so this never blocks startup.
   await NotificationService.initialize();
+
+  // Working copies left by the phone pickers, from previous runs. Startup is
+  // the one moment nothing is queued and nothing is being read, so it is the
+  // only safe moment to remove them - and without it the app's storage grows
+  // by the size of everything ever sent from it. Never awaited: it is
+  // housekeeping, and the first frame must not wait on a directory walk.
+  unawaited(FilePickerService.clearWorkingCopies());
 
   final HistoryController history =
       HistoryController(HistoryRepository(preferences));

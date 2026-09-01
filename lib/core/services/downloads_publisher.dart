@@ -41,7 +41,16 @@ class DownloadsPublisher {
   /// Returns where the file ended up, or null if it could not be published -
   /// in which case the caller keeps the copy it already has rather than losing
   /// the transfer over a filing problem.
-  static Future<PublishedFile?> publish(String path) async {
+  ///
+  /// [subPath] is the folder the file sat in on the sending device, already
+  /// sanitised, so a folder sent from a laptop arrives on the phone as a
+  /// folder rather than as its contents scattered through Downloads.
+  /// [modifiedAt] is the age it had there.
+  static Future<PublishedFile?> publish(
+    String path, {
+    String subPath = '',
+    DateTime? modifiedAt,
+  }) async {
     if (!isSupported) return null;
     final String name = p.basename(path);
     try {
@@ -52,6 +61,10 @@ class DownloadsPublisher {
           'path': path,
           'name': name,
           'mimeType': mimeTypeOf(name),
+          // Separators normalised: this crosses to Android, which knows only
+          // one, and the path may have been built on Windows.
+          'subPath': subPath.replaceAll(r'\', '/'),
+          'modified': modifiedAt?.millisecondsSinceEpoch,
         },
       );
       if (published == null) {
@@ -131,7 +144,52 @@ class DownloadsPublisher {
     'jar': 'application/java-archive',
     // Fonts
     'ttf': 'font/ttf', 'otf': 'font/otf', 'woff': 'font/woff',
-    'woff2': 'font/woff2',
+    'woff2': 'font/woff2', 'ttc': 'font/collection', 'eot': 'application/vnd.ms-fontobject',
+    // Ebooks, notes and the rest of the long tail people actually send
+    'azw3': 'application/vnd.amazon.ebook', 'fb2': 'application/x-fictionbook+xml',
+    'cbz': 'application/vnd.comicbook+zip', 'cbr': 'application/vnd.comicbook-rar',
+    'odg': 'application/vnd.oasis.opendocument.graphics',
+    'odf': 'application/vnd.oasis.opendocument.formula',
+    'rtfd': 'application/rtf', 'pages': 'application/x-iwork-pages-sffpages',
+    'numbers': 'application/x-iwork-numbers-sffnumbers',
+    'key': 'application/x-iwork-keynote-sffkey',
+    'tex': 'text/x-tex', 'bib': 'text/x-bibtex',
+    // Design and CAD
+    'ai': 'application/postscript', 'eps': 'application/postscript',
+    'sketch': 'application/octet-stream', 'fig': 'application/octet-stream',
+    'xd': 'application/octet-stream', 'blend': 'application/x-blender',
+    'dwg': 'image/vnd.dwg', 'dxf': 'image/vnd.dxf', 'stl': 'model/stl',
+    'obj': 'model/obj', 'gltf': 'model/gltf+json', 'glb': 'model/gltf-binary',
+    // Archives and images the first pass missed
+    'zst': 'application/zstd', 'lz4': 'application/x-lz4',
+    'tgz': 'application/gzip', 'cab': 'application/vnd.ms-cab-compressed',
+    'jxl': 'image/jxl', 'jp2': 'image/jp2', 'cr2': 'image/x-canon-cr2',
+    'nef': 'image/x-nikon-nef', 'arw': 'image/x-sony-arw',
+    'orf': 'image/x-olympus-orf', 'rw2': 'image/x-panasonic-rw2',
+    // Installers and packages
+    'ipa': 'application/octet-stream', 'appx': 'application/vnd.ms-appx',
+    'msix': 'application/msix', 'apks': 'application/octet-stream',
+    'aab': 'application/octet-stream', 'pkg': 'application/octet-stream',
+    'appimage': 'application/x-executable', 'snap': 'application/octet-stream',
+    'flatpak': 'application/vnd.flatpak',
+    // Data and config
+    'db': 'application/vnd.sqlite3', 'sqlite': 'application/vnd.sqlite3',
+    'parquet': 'application/vnd.apache.parquet', 'tsv': 'text/tab-separated-values',
+    'env': 'text/plain', 'conf': 'text/plain', 'cfg': 'text/plain',
+    'properties': 'text/plain', 'lock': 'text/plain', 'diff': 'text/x-diff',
+    'patch': 'text/x-diff', 'gitignore': 'text/plain',
+    // More code, all text. `.ts` is deliberately absent: it is already listed
+    // as an MPEG transport stream above, and a video that will not play is a
+    // worse outcome than a source file that opens in a text editor anyway.
+    'tsx': 'text/plain', 'jsx': 'text/javascript',
+    'vue': 'text/plain', 'svelte': 'text/plain', 'scss': 'text/x-scss',
+    'less': 'text/plain', 'swift': 'text/plain', 'm': 'text/plain',
+    'mm': 'text/plain', 'scala': 'text/plain', 'clj': 'text/plain',
+    'ex': 'text/plain', 'exs': 'text/plain', 'erl': 'text/plain',
+    'hs': 'text/plain', 'lua': 'text/plain', 'pl': 'text/plain',
+    'r': 'text/plain', 'jl': 'text/plain', 'zig': 'text/plain',
+    'gradle': 'text/plain', 'cmake': 'text/plain', 'dockerfile': 'text/plain',
+    'ipynb': 'application/x-ipynb+json',
     // Office
     'doc': 'application/msword',
     'docx':

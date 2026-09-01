@@ -1,4 +1,4 @@
-package com.example.hoza_send
+package com.rahozosman.hozasend
 
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
@@ -23,17 +23,22 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * The two things HozaSend needs from Android that Dart cannot reach.
+ * The things HozaSend needs from Android that Dart cannot reach.
  *
  * A Wi-Fi multicast lock, because Android filters broadcast packets once Wi-Fi
  * power saving kicks in - which is exactly what silences discovery when the
- * screen dims. And MediaStore, because scoped storage means a received file
- * cannot simply be written into the public Downloads folder with a path.
+ * screen dims. MediaStore, because scoped storage means a received file cannot
+ * simply be written into the public Downloads folder with a path. And the
+ * Storage Access Framework, because a file-sharing app cannot afford to copy
+ * every file its user picks before it can send it - see [DocumentFiles].
  */
 class MainActivity : FlutterActivity() {
 
     private var multicastLock: WifiManager.MulticastLock? = null
     private var linkLock: WifiManager.WifiLock? = null
+
+    /** Picking and reading files without copying them first. */
+    private val documents: DocumentFiles by lazy { DocumentFiles(this) }
 
     /** Kept so a share arriving later can be pushed to Dart. */
     private var shareChannel: MethodChannel? = null
@@ -81,6 +86,10 @@ class MainActivity : FlutterActivity() {
                                     path,
                                     name,
                                     call.argument<String>("mimeType"),
+                                    call.argument<String>("subPath").orEmpty(),
+                                    // Milliseconds on the wire, seconds in
+                                    // MediaStore; converted where it is used.
+                                    call.argument<Number>("modified")?.toLong(),
                                 ),
                             )
                         }
@@ -130,6 +139,9 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FILES_CHANNEL)
+            .setMethodCallHandler { call, result -> documents.handle(call, result) }
+
         shareChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             SHARE_CHANNEL,
@@ -144,6 +156,20 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * The document picker coming back.
+     *
+     * Anything that is not ours goes to `super`, which is what hands results to
+     * the Flutter plugins - swallowing them here would break every plugin that
+     * starts an activity of its own.
+     */
+    @Deprecated("Matches the FlutterActivity method being overridden")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (documents.onActivityResult(requestCode, resultCode, data)) return
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     /**
@@ -446,6 +472,9 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         shareWorker.shutdown()
+        // Closes any file the picker still had open. A stream left behind
+        // holds a descriptor on a file the user may be trying to delete.
+        documents.dispose()
         // The radio must not be left awake if the activity goes away while
         // discovery or a transfer is still running.
         releaseLock()
@@ -473,14 +502,24 @@ class MainActivity : FlutterActivity() {
         sourcePath: String,
         displayName: String,
         mimeType: String?,
+        subPath: String,
+        modifiedMs: Long?,
     ): Map<String, String?>? {
         val source = File(sourcePath)
         if (!source.exists()) return null
 
+        // Already sanitised on the Dart side, and sanitised again here: this
+        // path began life on another device, and it is about to be turned into
+        // a directory. Anything that could climb out of Downloads/HozaSend is
+        // dropped rather than trusted twice.
+        val folder = subPath.split('/', '\\')
+            .filter { it.isNotEmpty() && it != "." && it != ".." }
+            .joinToString("/")
+
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            publishViaMediaStore(source, displayName, mimeType)
+            publishViaMediaStore(source, displayName, mimeType, folder, modifiedMs)
         } else {
-            publishViaFile(source, displayName)
+            publishViaFile(source, displayName, folder, modifiedMs)
         }
     }
 
@@ -597,15 +636,25 @@ class MainActivity : FlutterActivity() {
         source: File,
         displayName: String,
         mimeType: String?,
+        subPath: String,
+        modifiedMs: Long?,
     ): Map<String, String?>? {
         val resolver = applicationContext.contentResolver
+        val relative = if (subPath.isEmpty()) {
+            "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER"
+        } else {
+            "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER/$subPath"
+        }
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, displayName)
-            put(
-                MediaStore.Downloads.RELATIVE_PATH,
-                "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER",
-            )
+            put(MediaStore.Downloads.RELATIVE_PATH, relative)
             if (mimeType != null) put(MediaStore.Downloads.MIME_TYPE, mimeType)
+            // Seconds here, unlike everywhere else in the app. A file keeps the
+            // age it had on the device that sent it, so a folder of photos
+            // still sorts by when they were taken.
+            if (modifiedMs != null) {
+                put(MediaStore.Downloads.DATE_MODIFIED, modifiedMs / 1000L)
+            }
             // Hidden from other apps until the bytes are all there, so nothing
             // can pick up a half-written file.
             put(MediaStore.Downloads.IS_PENDING, 1)
@@ -632,7 +681,7 @@ class MainActivity : FlutterActivity() {
             // that can open it again: under scoped storage there is no path
             // back to a published file.
             mapOf(
-                "location" to "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER/$displayName",
+                "location" to "$relative/$displayName",
                 "uri" to uri.toString(),
             )
         } catch (error: Exception) {
@@ -647,13 +696,16 @@ class MainActivity : FlutterActivity() {
     private fun publishViaFile(
         source: File,
         displayName: String,
+        subPath: String,
+        modifiedMs: Long?,
     ): Map<String, String?>? {
-        val directory = File(
+        val root = File(
             Environment.getExternalStoragePublicDirectory(
                 Environment.DIRECTORY_DOWNLOADS,
             ),
             FOLDER,
         )
+        val directory = if (subPath.isEmpty()) root else File(root, subPath)
         if (!directory.exists() && !directory.mkdirs()) return null
 
         val stem = displayName.substringBeforeLast('.', displayName)
@@ -671,6 +723,7 @@ class MainActivity : FlutterActivity() {
         return try {
             source.copyTo(target, overwrite = false)
             source.delete()
+            if (modifiedMs != null) target.setLastModified(modifiedMs)
             // Here the path is both answers at once: on these versions the
             // file really is where it says it is, and the app may still open
             // it by path.
@@ -686,6 +739,7 @@ class MainActivity : FlutterActivity() {
         private const val SETTINGS_CHANNEL = "hozasend/system_settings"
         private const val SESSION_CHANNEL = "hozasend/session"
         private const val SHARE_CHANNEL = "hozasend/share"
+        private const val FILES_CHANNEL = "hozasend/files"
         private const val SETTINGS_PACKAGE = "com.android.settings"
 
         /** Working copies of shared files, inside the app own cache. */

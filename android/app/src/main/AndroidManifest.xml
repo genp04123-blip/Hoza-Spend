@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Local network only. HozaSend never contacts the internet: INTERNET is
          what Android requires for any socket at all, including a UDP broadcast
          to the device next to you. -->
@@ -39,11 +40,35 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28"/>
+    <!-- Not asked for by HozaSend: file_picker declares it, and the manifest
+         merger pulls a library's permissions into the app whether or not the
+         app wants them. Capped rather than removed, because it is genuinely
+         needed on older phones - but from API 33 it does nothing at all
+         (Android split it into the READ_MEDIA_* permissions), and picking a
+         file goes through the Storage Access Framework, which needs no
+         permission on any version. Leaving it uncapped would mean a
+         production app asking every modern device for blanket read access to
+         its storage and never using it.
 
+         tools:node="replace" is what makes this declaration win over
+         file_picker's; without it the merger keeps the uncapped one. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"
+        tools:node="replace"/>
+
+    <!-- allowBackup is off deliberately. Left on, Android backs the app's
+         preferences up to the user's Google Drive and restores them onto a new
+         phone - and those preferences include the identity this device
+         announces itself under on the network, so a restore would put two
+         devices on the same network claiming to be the same one. Nothing here
+         is worth carrying across a device swap: received files live in
+         Downloads and are not app data at all. -->
     <application
         android:label="HozaSend"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

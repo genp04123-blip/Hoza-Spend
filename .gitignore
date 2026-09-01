@@ -81,3 +81,17 @@ CLAUDE.md*
 # ...but the README's screenshots and the app icon are part of the repo.
 !/docs/screenshots/*.png
 !/assets/icon/*.png
+
+# Android release signing. The keystore itself lives outside the repo (see
+# android/tool/new_release_keystore.ps1), but these rules are the belt to
+# those braces: a keystore or its password must never reach a commit. Losing control
+# of the key means anyone can publish an "update" Android will happily install
+# over the real app.
+key.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.cer
+*.crt

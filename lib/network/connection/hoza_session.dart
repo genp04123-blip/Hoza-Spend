@@ -74,7 +74,23 @@ class HozaSession {
   DateTime _lastInbound = DateTime.now();
   bool _disposed = false;
   bool _inputPaused = false;
-  bool _writingBinary = false;
+
+  /// True while a flush is in flight.
+  ///
+  /// A Dart socket refuses a write for the duration of its own flush - the
+  /// sink counts as bound to a stream until the flush resolves - so anything
+  /// written in that window has to wait rather than throw. This is what makes
+  /// a heartbeat, a cancel or a pause safe to send at any moment: the framing
+  /// gives them a safe place in the byte stream, and this gives them a safe
+  /// moment in time.
+  bool _flushing = false;
+
+  /// Control lines written while a flush was in flight, in order.
+  ///
+  /// Only ever control lines. They are emitted the instant the flush resolves,
+  /// which in [sendFramed] is a chunk boundary, so they still land where the
+  /// receiver is reading text.
+  final List<List<int>> _outbox = <List<int>>[];
 
   /// Control messages from the peer. Pings and pongs are handled internally and
   /// never surface here.
@@ -88,8 +104,13 @@ class HozaSession {
 
   void send(ControlMessage message) {
     if (_disposed) return;
+    final List<int> bytes = message.encode();
+    if (_flushing) {
+      _outbox.add(bytes);
+      return;
+    }
     try {
-      _socket.add(message.encode());
+      _socket.add(bytes);
     } on SocketException catch (error) {
       Log.warn(_tag, 'Send failed: ${error.message}');
       _finish(HozaError.lost);
@@ -106,32 +127,65 @@ class HozaSession {
     _reader.expectBinary(length, onBytes: onBytes, onDone: onDone);
   }
 
-  /// Streams a file onto the wire.
+  /// Streams a file onto the wire as a run of length-prefixed chunks.
   ///
-  /// Heartbeats are suppressed for the duration: a ping line written into the
-  /// middle of raw file bytes would corrupt the stream. The peer stays
-  /// satisfied because the file bytes themselves are traffic.
-  Future<void> sendBinary(
+  /// Each chunk is a `chunk` header line followed by exactly that many raw
+  /// bytes, so between any two chunks the connection is back to carrying text
+  /// and either side may write a control line. That is what lets a heartbeat,
+  /// a cancel or a pause happen during a five gigabyte file instead of landing
+  /// inside it.
+  ///
+  /// The header and its bytes are written back to back with nothing awaited in
+  /// between, which on a single-threaded isolate means nothing can be
+  /// interleaved between them.
+  Future<void> sendFramed(
     Stream<List<int>> data, {
     required void Function(int byteCount) onProgress,
   }) async {
-    _writingBinary = true;
+    int unflushed = 0;
+    await for (final List<int> chunk in data) {
+      if (_disposed) throw HozaError.lost;
+      if (chunk.isEmpty) continue;
+      // Written straight to the socket rather than through [send], and as a
+      // pair with nothing awaited between them: a header separated from its
+      // own bytes would leave the receiver reading the wrong thing.
+      _socket.add(ControlMessage.chunk(chunk.length).encode());
+      _socket.add(chunk);
+      onProgress(chunk.length);
+      unflushed += chunk.length;
+      if (unflushed < _flushThreshold) continue;
+      unflushed = 0;
+      // Waits for the socket buffer to drain, which is what keeps a fast
+      // disk from queueing an entire file ahead of a slow network.
+      await _flush();
+    }
+    await _flush();
+  }
+
+  /// Flushes, holding back anything written while it is in flight.
+  Future<void> _flush() async {
+    if (_disposed) return;
+    _flushing = true;
     try {
-      int unflushed = 0;
-      await for (final List<int> chunk in data) {
-        if (_disposed) throw HozaError.lost;
-        _socket.add(chunk);
-        onProgress(chunk.length);
-        unflushed += chunk.length;
-        if (unflushed < _flushThreshold) continue;
-        unflushed = 0;
-        // Waits for the socket buffer to drain, which is what keeps a fast
-        // disk from queueing an entire file ahead of a slow network.
-        await _socket.flush();
-      }
       await _socket.flush();
     } finally {
-      _writingBinary = false;
+      _flushing = false;
+      _drainOutbox();
+    }
+  }
+
+  void _drainOutbox() {
+    if (_outbox.isEmpty) return;
+    final List<List<int>> waiting = List<List<int>>.of(_outbox);
+    _outbox.clear();
+    if (_disposed) return;
+    try {
+      for (final List<int> bytes in waiting) {
+        _socket.add(bytes);
+      }
+    } on SocketException catch (error) {
+      Log.warn(_tag, 'Send failed: ${error.message}');
+      _finish(HozaError.lost);
     }
   }
 
@@ -203,7 +257,10 @@ class HozaSession {
       _finish(HozaError.lost);
       return;
     }
-    if (_writingBinary) return;
+    // Sent even mid-transfer. Under the chunked framing a control line always
+    // lands on a chunk boundary, so the heartbeat can no longer write itself
+    // into a file - and a paused transfer, where by definition no file bytes
+    // are flowing, still proves both peers are alive.
     send(ControlMessage.ping);
   }
 
@@ -230,6 +287,8 @@ class HozaSession {
   /// liveness timeout.
   Future<void> _flushAndDestroy() async {
     try {
+      // Not through _flush: the session is already finished, so anything still
+      // in the outbox has nowhere useful to go.
       await _socket.flush();
     } catch (_) {
       // Tearing down anyway; nothing useful to do with a failure here.

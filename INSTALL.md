@@ -35,8 +35,9 @@ For a shortcut: right-click `hoza_send.exe` → **Send to** → **Desktop**.
    **Download anyway**.
 2. If Android blocks it, tap **Settings** in that dialog → **Allow from this
    source**, then press back.
-3. **Install**. If Play Protect complains, tap **Install anyway** — the app
-   just does not come from the Play Store.
+3. **Install**. If Play Protect complains, tap **More details** → **Install
+   anyway** — the app is properly signed, it just does not come from the Play
+   Store, and that is the only thing Play Protect is remarking on.
 4. Allow notifications when asked, so you hear about transfers in the
    background. Files land in `Downloads/HozaSend`, and tapping one in the app
    opens it.
@@ -91,10 +92,14 @@ six-digit code matches, accept, and send. No internet needed at any point.
 | macOS says the app "is damaged" | Gatekeeper on an unsigned app. Right-click → **Open** instead of double-clicking |
 | Nothing found on iOS | Expected for now — Apple blocks the broadcast HozaSend discovers with. See the iOS section above |
 | "Cannot receive" on home | Something else is using port 47821 |
-| "App not installed" | Uninstall the older HozaSend first |
+| "App not installed" | An older HozaSend is present that was signed with a different key — uninstall it first. Android will not replace an app with one signed by another key |
 
-Both builds are unsigned, which is the only reason Windows and Android warn
-about them. There is no server, no account and nothing to upload to.
+The Android APK is signed with HozaSend's own release key, so updates install
+over each other cleanly. Play Protect can still warn about it: that is about
+the app not coming from the Play Store, not about the signature. The Windows
+build is not yet code-signed, which is why SmartScreen warns about it.
+
+There is no server, no account and nothing to upload to.
 
 <!-- Relative on purpose: GitHub resolves this to this repository's own
      Releases page, so it survives a rename or a fork. -->

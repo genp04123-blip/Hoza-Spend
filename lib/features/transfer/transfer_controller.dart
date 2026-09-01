@@ -120,6 +120,47 @@ class TransferController extends ChangeNotifier {
   bool get isActive => hasTransfer && !_status.isFinished;
   bool get isSending => _direction == TransferDirection.send;
 
+  /// True while the transfer is held, by either user.
+  ///
+  /// Read from whichever side is running rather than kept as its own flag: the
+  /// peer can pause too, and a second copy of that state is a second thing to
+  /// get wrong.
+  bool get isPaused {
+    if (!isActive) return false;
+    if (_sender case final TransferSender sender) return sender.isPaused;
+    final String? id = _activePeerId;
+    if (id == null) return false;
+    return _peers[id]?.receiver.isPaused ?? false;
+  }
+
+  /// Pausing is only offered once bytes are actually moving. There is nothing
+  /// to hold while the other device is still deciding whether to accept.
+  bool get canPause => isActive && _status == TransferStatus.inProgress;
+
+  /// Holds the transfer where it is. Either user may do this, and either may
+  /// undo it; the connection stays up throughout.
+  void pause() {
+    if (!canPause || isPaused) return;
+    _sender?.pause();
+    final String? id = _activePeerId;
+    if (id != null) _peers[id]?.receiver.pause();
+  }
+
+  void resume() {
+    if (!isActive || !isPaused) return;
+    _sender?.resume();
+    final String? id = _activePeerId;
+    if (id != null) _peers[id]?.receiver.resume();
+  }
+
+  /// The pause came from one side or the other; the screen has to redraw
+  /// either way.
+  void _onPaused(bool paused) {
+    Log.info('Transfer', paused ? 'Held' : 'Running again');
+    _publishSessionProgress();
+    notifyListeners();
+  }
+
   /// True when the last send failed and the same files could go again. Needs
   /// the session to still be up; reconnecting first is a different action.
   bool get canRetry =>
@@ -156,6 +197,7 @@ class TransferController extends ChangeNotifier {
       session,
       files: files,
       onProgress: _onProgress,
+      onPaused: _onPaused,
     );
     _sender = sender;
     try {
@@ -251,6 +293,7 @@ class TransferController extends ChangeNotifier {
           onProgress: _onProgress,
           onStarted: (String id, List<TransferFile> files) =>
               _onReceiveStarted(link, files),
+          onPaused: _onPaused,
           onFinished: _onReceiveFinished,
         ),
       );
@@ -367,8 +410,16 @@ class TransferController extends ChangeNotifier {
         : isSending
             ? ' to $_deviceName'
             : ' from $_deviceName';
+    // A held transfer says so in the one place a user who has switched away
+    // will see it. Without this the notification reads as a transfer that has
+    // stalled, which is the thing a pause is meant not to look like.
+    final String verb = isPaused
+        ? 'Paused'
+        : isSending
+            ? 'Sending'
+            : 'Receiving';
     _connection.updateSessionProgress(
-      text: '${isSending ? 'Sending' : 'Receiving'} $what$who',
+      text: '$verb $what$who',
       percent: percent,
     );
   }

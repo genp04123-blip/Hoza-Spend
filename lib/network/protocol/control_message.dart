@@ -29,9 +29,21 @@ enum ControlType {
   offerAccept,
   offerReject,
 
-  /// Sender to receiver: this file starts now. Exactly `size` raw bytes
-  /// follow this line, then the framing returns to text.
+  /// Sender to receiver: this file starts now. Its bytes follow as a run of
+  /// [chunk] frames, and the file is complete when [fileDone] arrives.
   file,
+
+  /// Sender to receiver: exactly `n` raw bytes follow this line, then the
+  /// framing returns to text.
+  ///
+  /// A file is sent as many of these rather than as one unbroken run of its
+  /// whole length, and that is the difference between a protocol that survives
+  /// its own heartbeat and one that does not. With a single run there is no
+  /// moment in a five gigabyte file at which either side may write a control
+  /// line - so a pong, a cancel or a pause written while a file streams lands
+  /// *inside the file*. Returning to text between chunks gives every one of
+  /// those somewhere safe to go.
+  chunk,
 
   /// Sender to receiver, after the bytes: the checksum of what was just sent.
   /// It arrives as a trailer rather than in the offer so the sender can hash
@@ -40,6 +52,14 @@ enum ControlType {
 
   /// Sender to receiver: that was the last file.
   end,
+
+  /// Either side: hold the transfer where it is. The sender stops feeding
+  /// bytes at the next chunk boundary; nothing is torn down and no partial
+  /// file is discarded.
+  pause,
+
+  /// Either side: carry on from where [pause] stopped.
+  resume,
 
   /// Either side: stop the transfer now.
   cancel,
@@ -75,6 +95,10 @@ class SessionCode {
 
 class ControlMessage {
   const ControlMessage(this.type, [this.data = const <String, Object?>{}]);
+
+  /// Year 9999, in milliseconds. A modification time beyond this is not a date
+  /// the receiving filesystem can hold, so it is dropped rather than clamped.
+  static const int _maxTimestampMs = 253402300799000;
 
   final ControlType type;
   final Map<String, Object?> data;
@@ -130,6 +154,22 @@ class ControlMessage {
   factory ControlMessage.fileHeader(TransferFile file) =>
       ControlMessage(ControlType.file, file.toWire());
 
+  /// Announces the [length] raw bytes that follow this line.
+  factory ControlMessage.chunk(int length) => ControlMessage(
+        ControlType.chunk,
+        <String, Object?>{'n': length},
+      );
+
+  factory ControlMessage.pause(String transferId) => ControlMessage(
+        ControlType.pause,
+        <String, Object?>{'transfer': transferId},
+      );
+
+  factory ControlMessage.resume(String transferId) => ControlMessage(
+        ControlType.resume,
+        <String, Object?>{'transfer': transferId},
+      );
+
   factory ControlMessage.fileDone(String fileId, String checksum) =>
       ControlMessage(
         ControlType.fileDone,
@@ -160,6 +200,18 @@ class ControlMessage {
   String? get fileId => data['id'] as String?;
   String? get checksum => data['sha256'] as String?;
   bool get isOk => data['ok'] == true;
+
+  /// How many raw bytes follow a [ControlType.chunk] line.
+  ///
+  /// Null for anything absent, negative, or larger than a chunk is allowed to
+  /// be. This number decides how much the receiver will take on trust from an
+  /// open port, so an unusable one is refused here rather than acted on.
+  int? get chunkLength {
+    final Object? value = data['n'];
+    if (value is! int) return null;
+    if (value <= 0 || value > AppConstants.maxChunkSize) return null;
+    return value;
+  }
 
   /// The six digit code carried by a [ControlType.hello]. Kept under its own
   /// key so it can never be confused with an error's code.
@@ -198,6 +250,18 @@ class ControlMessage {
         (FileKind kind) => kind.name == json['kind'],
         orElse: () => FileKind.other,
       ),
+      // Both are optional, and both come from another device. A timestamp
+      // outside what DateTime can hold, or a relative path that is not a
+      // string, is simply not carried rather than allowed to fail the file.
+      modifiedAt: switch (json['mtime']) {
+        final int ms when ms > 0 && ms < _maxTimestampMs =>
+          DateTime.fromMillisecondsSinceEpoch(ms),
+        _ => null,
+      },
+      relativePath: switch (json['rel']) {
+        final String rel when rel.isNotEmpty => rel,
+        _ => null,
+      },
     );
   }
 

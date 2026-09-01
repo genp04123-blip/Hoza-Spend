@@ -28,6 +28,7 @@ class ProgressTracker {
   int _filesDone = 0;
   String? _currentFile;
   double _speed = 0;
+  bool _paused = false;
 
   int _lastBytes = 0;
   DateTime _lastTick = DateTime.now();
@@ -41,6 +42,22 @@ class ProgressTracker {
   }
 
   void addBytes(int count) => _bytes += count;
+
+  /// Marks the transfer as held, or released.
+  ///
+  /// A pause is a decision, not a slow network, so the speed and the estimate
+  /// go blank instead of decaying towards zero and telling the user their
+  /// transfer has hours left. Resuming reseeds the measurement from the
+  /// current byte count, so the wait is not averaged into the rate that comes
+  /// after it.
+  void setPaused(bool paused) {
+    if (_paused == paused) return;
+    _paused = paused;
+    _lastBytes = _bytes;
+    _lastTick = DateTime.now();
+    if (!paused) _speed = 0;
+    onUpdate(snapshot());
+  }
 
   void beginFile(String name) => _currentFile = name;
 
@@ -57,14 +74,24 @@ class ProgressTracker {
   TransferProgress snapshot() => TransferProgress(
         bytesTransferred: _bytes,
         totalBytes: totalBytes,
-        bytesPerSecond: _speed,
+        bytesPerSecond: _paused ? 0 : _speed,
         currentFileName: _currentFile,
         filesDone: _filesDone,
         filesTotal: filesTotal,
+        isPaused: _paused,
       );
 
   void _tick() {
     final DateTime now = DateTime.now();
+    if (_paused) {
+      // The clock keeps moving while nothing arrives. Carrying that interval
+      // into the average would show a rate the network never had, so the
+      // measurement is simply held alongside the transfer.
+      _lastBytes = _bytes;
+      _lastTick = now;
+      onUpdate(snapshot());
+      return;
+    }
     final double seconds =
         now.difference(_lastTick).inMicroseconds / Duration.microsecondsPerSecond;
     if (seconds > 0) {

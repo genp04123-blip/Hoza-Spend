@@ -68,7 +68,7 @@ class ReceivedFileRow extends StatelessWidget {
           const SizedBox(width: Insets.md),
           Expanded(
             child: Text(
-              file.name,
+              file.displayName,
               style: context.text.bodySmall?.copyWith(color: c.textPrimary),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

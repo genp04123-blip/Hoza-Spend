@@ -1,0 +1,52 @@
+{
+  "$comment": [
+    "Single source of truth for the Windows product identity.",
+    "",
+    "Everything that has to agree - the exe's VERSIONINFO block, the installer,",
+    "the Programs & Features entry and the name SmartScreen shows as the",
+    "publisher - is stated here once. build_installer.ps1 feeds these values to",
+    "Inno Setup, and verify_release.ps1 reads the built binaries back and fails",
+    "if any of them drifted.",
+    "",
+    "'publisher' must match the Common Name (CN) of your code signing",
+    "certificate. Windows shows the certificate's CN on the SmartScreen and UAC",
+    "prompts, and shows this file's value in the file's Properties; if the two",
+    "disagree the app looks like it is impersonating someone."
+  ],
+
+  "productName": "HozaSend",
+  "executableName": "HozaSend.exe",
+
+  "publisher": "Rahoz Osman Salim",
+  "copyright": "Copyright (C) 2026 Rahoz Osman Salim",
+  "description": "Send files across your local network, with no internet",
+  "contact": "hozahoza2001@gmail.com",
+
+  "publisherUrl": "https://github.com/genp04123-blip/Hoza-Spend",
+  "supportUrl": "https://github.com/genp04123-blip/Hoza-Spend/issues",
+  "updatesUrl": "https://github.com/genp04123-blip/Hoza-Spend/releases",
+
+  "$comment_appId": "Never change: it is what lets a new version upgrade the old one in place.",
+  "appId": "{8E3F1C22-5A47-4B9E-9C1D-6F2A0B7D4E13}",
+
+  "$comment_timestamp": [
+    "RFC 3161 timestamp servers, tried in order. A timestamp is what keeps a",
+    "signature valid after the certificate expires - without one every release",
+    "goes unsigned the day the certificate lapses, and its reputation with it."
+  ],
+  "timestampUrls": [
+    "http://timestamp.digicert.com",
+    "http://timestamp.sectigo.com",
+    "http://timestamp.acs.microsoft.com"
+  ],
+
+  "$comment_legacy": [
+    "What the exe's VERSIONINFO said before this release. path_provider on",
+    "Windows derives %APPDATA%\<CompanyName>\<ProductName> from those two",
+    "fields, so correcting them moves where shared_preferences lives. The",
+    "installer copies the old file across once so nobody loses their device",
+    "name, theme or history. Safe to delete once no com.example build is left."
+  ],
+  "legacyCompanyName": "com.example",
+  "legacyProductName": "hoza_send"
+}

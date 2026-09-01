@@ -48,6 +48,8 @@ class TransferFile {
     this.savedPath,
     this.openUri,
     this.checksum,
+    this.modifiedAt,
+    this.relativePath,
   });
 
   /// Unique within its transfer; used to match incoming chunks to a file.
@@ -85,18 +87,44 @@ class TransferFile {
   /// is renamed to its final name.
   final String? checksum;
 
+  /// When the file was last written, as the sending device saw it.
+  ///
+  /// Carried across so a received file keeps its own age instead of all
+  /// arriving stamped with the moment of the transfer - which is what turns a
+  /// folder of photos sorted by date into a folder sorted by nothing. Null
+  /// when the source could not report one; the receiver then leaves the
+  /// timestamp alone rather than inventing one.
+  final DateTime? modifiedAt;
+
+  /// Where this file sits inside the folder it was picked from, using `/` as
+  /// the separator: `photos/2026/trip.jpg`.
+  ///
+  /// Null for a file chosen on its own, which lands directly in the download
+  /// folder. Set for every file that came from a folder selection or a dropped
+  /// folder, so the receiver can rebuild the tree instead of emptying it into
+  /// one flat pile. Sanitised segment by segment on arrival - it is a path
+  /// from another device and is treated as such.
+  final String? relativePath;
+
+  /// The name to show for this file: its place in the tree where it has one.
+  String get displayName => relativePath ?? name;
+
   Map<String, Object?> toWire() => <String, Object?>{
         'id': id,
         'name': name,
         'size': size,
         'kind': kind.name,
         if (checksum != null) 'checksum': checksum,
+        if (modifiedAt != null) 'mtime': modifiedAt!.millisecondsSinceEpoch,
+        if (relativePath != null) 'rel': relativePath,
       };
 
   TransferFile copyWith({
     String? savedPath,
     String? openUri,
     String? checksum,
+    DateTime? modifiedAt,
+    String? relativePath,
   }) {
     return TransferFile(
       id: id,
@@ -107,6 +135,8 @@ class TransferFile {
       savedPath: savedPath ?? this.savedPath,
       openUri: openUri ?? this.openUri,
       checksum: checksum ?? this.checksum,
+      modifiedAt: modifiedAt ?? this.modifiedAt,
+      relativePath: relativePath ?? this.relativePath,
     );
   }
 }
@@ -120,6 +150,7 @@ class TransferProgress {
     this.currentFileName,
     this.filesDone = 0,
     this.filesTotal = 1,
+    this.isPaused = false,
   });
 
   static const TransferProgress zero = TransferProgress(
@@ -135,6 +166,11 @@ class TransferProgress {
   final int filesDone;
   final int filesTotal;
 
+  /// Held by one of the two users. The bar keeps its position and stops
+  /// moving; the speed and the estimate go blank rather than counting a
+  /// deliberate wait as the network having slowed to nothing.
+  final bool isPaused;
+
   /// 0.0 to 1.0. A zero total means "unknown", which reads as 0 rather than NaN.
   double get fraction {
     if (totalBytes <= 0) return 0;
@@ -146,6 +182,7 @@ class TransferProgress {
   /// Null while the speed is not yet meaningful, so the UI can show a dash
   /// instead of a wildly wrong estimate in the first few hundred milliseconds.
   Duration? get remaining {
+    if (isPaused) return null;
     if (bytesPerSecond <= 0 || totalBytes <= 0) return null;
     final int left = totalBytes - bytesTransferred;
     if (left <= 0) return Duration.zero;
@@ -196,6 +233,8 @@ class TransferRecord {
                   'kind': f.kind.name,
                   'savedPath': f.savedPath,
                   'openUri': f.openUri,
+                  'mtime': f.modifiedAt?.millisecondsSinceEpoch,
+                  'rel': f.relativePath,
                 })
             .toList(),
       };
@@ -230,6 +269,11 @@ class TransferRecord {
                 ),
                 savedPath: f['savedPath'] as String?,
                 openUri: f['openUri'] as String?,
+                modifiedAt: switch (f['mtime']) {
+                  final int ms => DateTime.fromMillisecondsSinceEpoch(ms),
+                  _ => null,
+                },
+                relativePath: f['rel'] as String?,
               ))
           .toList(),
     );
